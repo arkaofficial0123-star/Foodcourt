@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "Item": {
+      "title": "Item",
+      "description": "A restaurant menu item/dish",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the menu item"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the dish"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price of the dish"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Image URL or Base64 representation of the dish"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO structure or Firebase timestamp indicating when item was added"
+        }
+      },
+      "required": ["name", "price", "imageUrl", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order placed by a specific table",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the order"
+        },
+        "tableId": {
+          "type": "string",
+          "description": "Identifier of the table placing the order"
+        },
+        "items": {
+          "type": "array",
+          "description": "List of ordered items with quantities and snapshot details"
+        },
+        "total": {
+          "type": "number",
+          "description": "Total order amount"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "completed"],
+          "description": "Current preparation state of the order"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the order was placed"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the order status was last updated"
+        }
+      },
+      "required": ["tableId", "items", "total", "status", "createdAt", "updatedAt"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "A singleton representing promotional banner configuration",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Promotional or welcome text description"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Banner background image URL or Base64 representation"
+        },
+        "visible": {
+          "type": "boolean",
+          "description": "Controls whether the banner is shown to clients"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp for the last banner modification"
+        }
+      },
+      "required": ["text", "imageUrl", "visible", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/items/{itemId}": {
+      "schema": "Item",
+      "description": "Collection of available menu items"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of tables and their placed orders"
+    },
+    "/settings/banner": {
+      "schema": "Banner",
+      "description": "Single record representing the top promotional banner"
+    }
+  }
+}

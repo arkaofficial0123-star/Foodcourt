@@ -1,0 +1,6 @@
+{
+  "name": "QR Table Menu & Ordering",
+  "description": "Minimalist monochrome QR table ordering system with high contrast dark background, real-time Firestore synchronization, order cart, active orders dashboard, and admin banner/item configuration settings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
