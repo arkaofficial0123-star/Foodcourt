@@ -208,6 +208,13 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
     if (!isAuthenticated) return;
     const checkAndSeed = async () => {
       try {
+        const secRef = doc(db, "settings", "security");
+        const secSnap = await getDoc(secRef);
+        if (secSnap.exists() && secSnap.data().disableAutoSeed === true) {
+          console.log("Auto-seeding is explicitly disabled.");
+          return;
+        }
+
         const fcRef = doc(db, "restaurants", "foodcourt");
         const snap = await getDoc(fcRef);
         if (!snap.exists()) {
@@ -344,6 +351,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
 
     setIsWiping(true);
     try {
+      if (restaurantToDelete.id === "foodcourt") {
+        await setDoc(doc(db, "settings", "security"), { disableAutoSeed: true }, { merge: true });
+      }
       await deleteDoc(doc(db, "restaurants", restaurantToDelete.id));
       setRestaurantToDelete(null);
       setDeleteConfirmationInput("");
@@ -363,6 +373,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
 
     setIsWipingAll(true);
     try {
+      // Record permission so seeding won't recreate the default branch
+      await setDoc(doc(db, "settings", "security"), { disableAutoSeed: true }, { merge: true });
+
       const promises = restaurants.map(async (r) => {
         try {
           await deleteDoc(doc(db, "restaurants", r.id));
