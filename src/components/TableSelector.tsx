@@ -7,9 +7,10 @@ import React from "react";
 
 interface TableSelectorProps {
   onSelectTable: (tableId: string) => void;
+  restaurantName?: string;
 }
 
-export default function TableSelector({ onSelectTable }: TableSelectorProps) {
+export default function TableSelector({ onSelectTable, restaurantName = "Foodcourt" }: TableSelectorProps) {
   const tables = [
     "T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7", "T-8", "T-9", "T-10",
     "T-11", "T-12", "T-13", "T-14", "T-15", "T-16", "T-17", "T-18", "T-19", "T-20"
@@ -22,10 +23,10 @@ export default function TableSelector({ onSelectTable }: TableSelectorProps) {
         {/* Brand Header */}
         <div className="text-center space-y-3">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-black font-black text-2xl shadow-xl">
-            F
+            {restaurantName.charAt(0).toUpperCase()}
           </div>
           <h1 className="font-serif italic text-3xl text-white tracking-tight">
-            Foodcourt
+            {restaurantName}
           </h1>
         </div>
 

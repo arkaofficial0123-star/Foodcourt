@@ -1,53 +1,44 @@
-# 🏮 Foodcourt
+# 🍔 Foodcourt
 
-> A fast, QR-based digital menu and order management system for modern restaurants.
-
----
-
-## 📖 About the Project
-
-**Foodcourt** is a responsive web application that completely replaces traditional paper menus. Diners simply scan a table-bound **QR code** to browse dishes, filter by category, and send orders directly to the kitchen instantly—no sign-ups or app downloads required. 
-
-Everything updates in real time on a central admin console, allowing restaurant staff to seamlessly track, prepare, and manage orders as they come in.
-
-> 🤖 **Note:** This project was built using **Google AI Studio** to help scaffold the initial layout and UI structure, with manual code customizations added to handle the real-time database tracking and core business logic.
+A modern, real-time tabletop dining menu and order management platform built with React, Vite, Tailwind CSS, and Firebase.
 
 ---
 
-## ✨ Key Features
+## ⚡ Quick Start
 
-*   📱 **Scan to Order:** Table-bound ordering sessions activated instantly via QR code links.
-*   🛒 **Live Basket:** Interactive digital menu with quick search, category filtering, and an instant checkout cart.
-*   ⚡ **Real-Time Desk:** Admin dashboard that tracks incoming kitchen orders instantly using reactive listeners.
-*   📋 **Status Tracking:** Quick staff controls to mark active orders as *Pending*, *In Preparation*, or *Delivered*.
-
----
-
-## 🛠️ Tech Stack
-
-*   **AI Assistant:** Google AI Studio
-*   **Frontend Framework:** React 18 & TypeScript
-*   **Build Tool:** Vite
-*   **Database:** Firebase Cloud Firestore (Real-time sync)
-*   **Styling & Motion:** Tailwind CSS & Framer Motion
-
----
-
-## 🚀 Quick Start
-
-### 1. Installation
+### 1. Install Dependencies
 ```bash
-git clone <your-github-repo-url>
-cd foodcourt
 npm install
+```
 
+### 2. Configure Environment Variables
+Create a `.env` file in the root directory and add your Firebase credentials:
+```env
+VITE_FIREBASE_API_KEY="your-api-key"
+VITE_FIREBASE_AUTH_DOMAIN="your-auth-domain"
+VITE_FIREBASE_PROJECT_ID="your-project-id"
+VITE_FIREBASE_STORAGE_BUCKET="your-storage-bucket"
+VITE_FIREBASE_MESSAGING_SENDER_ID="your-sender-id"
+VITE_FIREBASE_APP_ID="your-app-id"
+VITE_FIREBASE_FIRESTORE_DATABASE_ID=""
+```
 
-VITE_FIREBASE_API_KEY=your_key
-VITE_FIREBASE_AUTH_DOMAIN=your_domain
-VITE_FIREBASE_PROJECT_ID=your_id
-VITE_FIREBASE_STORAGE_BUCKET=your_bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-
-
+### 3. Run Development Server
+```bash
 npm run dev
+```
+
+### 4. Build for Production
+```bash
+npm run build
+```
+
+---
+
+## 🚀 Deploying to Vercel
+
+1. Push your code to a **GitHub repository**.
+2. Go to [Vercel](https://vercel.com) and click **Add New > Project**.
+3. Import your repository.
+4. Under **Environment Variables**, paste the keys from your `.env` file.
+5. Click **Deploy**. Vercel will build and serve your app instantly!

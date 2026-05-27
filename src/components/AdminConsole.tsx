@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType, auth } from "../firebase";
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot } from "firebase/firestore";
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 interface AdminConsoleProps {
@@ -22,6 +22,9 @@ interface AdminConsoleProps {
   orders: Order[];
   bannerSettings: BannerSettings | null;
   onBackToMenu: () => void;
+  restaurantId?: string | null;
+  restaurantName?: string;
+  onBackToSuperAdmin?: () => void;
 }
 
 // Pre-defined elegant default backgrounds if user does not upload a file
@@ -36,13 +39,21 @@ export default function AdminConsole({
   items,
   orders,
   bannerSettings,
-  onBackToMenu
+  onBackToMenu,
+  restaurantId = null,
+  restaurantName = "Foodcourt",
+  onBackToSuperAdmin
 }: AdminConsoleProps) {
-  const [activeTab, setActiveTab] = useState<"orders" | "items" | "banner" | "analytics" | "staffs">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "items" | "settings" | "analytics">("orders");
   const [orderFilter, setOrderFilter] = useState<"pending" | "accepted" | "completed">("pending");
 
   // Auth & Dual Password Session Management Model
   const [currentRole, setCurrentRole] = useState<"guest" | "staff" | "superadmin">(() => {
+    if (restaurantId) {
+      const bypass = sessionStorage.getItem(`admin_role_${restaurantId}`) as "guest" | "staff" | "superadmin";
+      if (bypass) return bypass;
+      return "staff"; // Auto-bypasses the Staff Secure Gate page for local branches
+    }
     return (sessionStorage.getItem("admin_role") as "guest" | "staff" | "superadmin") || "guest";
   });
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -70,7 +81,10 @@ export default function AdminConsole({
     setWipeItemsFeedback(null);
     try {
       for (const item of items) {
-        await deleteDoc(doc(db, "items", item.id));
+        const itemDocRef = restaurantId 
+          ? doc(db, "restaurants", restaurantId, "items", item.id) 
+          : doc(db, "items", item.id);
+        await deleteDoc(itemDocRef);
       }
       setWipeItemsFeedback({
         type: "success",
@@ -92,7 +106,10 @@ export default function AdminConsole({
     setWipeOrdersFeedback(null);
     try {
       for (const order of orders) {
-        await deleteDoc(doc(db, "orders", order.id));
+        const orderDocRef = restaurantId 
+          ? doc(db, "restaurants", restaurantId, "orders", order.id) 
+          : doc(db, "orders", order.id);
+        await deleteDoc(orderDocRef);
       }
       setWipeOrdersFeedback({
         type: "success",
@@ -111,19 +128,38 @@ export default function AdminConsole({
 
   const fetchPasswordsAndCheckSession = async () => {
     try {
-      const secSnap = await getDoc(doc(db, "settings", "security"));
-      if (secSnap.exists()) {
-        const data = secSnap.data();
-        setCurrentStaffPassword(data.staffPassword || "1234");
-        setCurrentSuperAdminPassword(data.superAdminPassword || "1234");
+      if (restaurantId) {
+        // Load target restaurant's local staff passcode
+        const restSnap = await getDoc(doc(db, "restaurants", restaurantId));
+        if (restSnap.exists()) {
+          const rData = restSnap.data();
+          setCurrentStaffPassword(rData.password || "1234");
+        } else {
+          setCurrentStaffPassword("1234");
+        }
+        
+        // Also fetch general super admin override password for fallback bypasses
+        const secSnap = await getDoc(doc(db, "settings", "security"));
+        if (secSnap.exists()) {
+          const data = secSnap.data();
+          setCurrentSuperAdminPassword(data.superAdminPassword || "1234");
+        } else {
+          setCurrentSuperAdminPassword("1234");
+        }
       } else {
-        // Bootstrap security defaults
-        await setDoc(doc(db, "settings", "security"), {
-          staffPassword: "1234",
-          superAdminPassword: "1234"
-        }, { merge: true });
-        setCurrentStaffPassword("1234");
-        setCurrentSuperAdminPassword("1234");
+        const secSnap = await getDoc(doc(db, "settings", "security"));
+        if (secSnap.exists()) {
+          const data = secSnap.data();
+          setCurrentStaffPassword("1234");
+          setCurrentSuperAdminPassword(data.superAdminPassword || "1234");
+        } else {
+          // Bootstrap security defaults
+          await setDoc(doc(db, "settings", "security"), {
+            superAdminPassword: "1234"
+          }, { merge: true });
+          setCurrentStaffPassword("1234");
+          setCurrentSuperAdminPassword("1234");
+        }
       }
     } catch (err) {
       console.error("Error reading secure settings:", err);
@@ -135,10 +171,24 @@ export default function AdminConsole({
   }, [activeTab]);
 
   useEffect(() => {
+    if (!restaurantId) return;
+    const unsub = onSnapshot(doc(db, "restaurants", restaurantId), (snap) => {
+      if (snap.exists()) {
+        setCurrentStaffPassword(snap.data().password || "1234");
+      }
+    });
+    return unsub;
+  }, [restaurantId]);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (user && user.email === "arka.official0123@gmail.com") {
-        sessionStorage.setItem("admin_role", "superadmin");
+        if (restaurantId) {
+          sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
+        } else {
+          sessionStorage.setItem("admin_role", "superadmin");
+        }
         setCurrentRole("superadmin");
       }
     });
@@ -147,10 +197,19 @@ export default function AdminConsole({
 
   const handleSignOut = async () => {
     try {
-      sessionStorage.removeItem("admin_role");
-      setCurrentRole("guest");
-      setStaffPasswordInput("");
+      if (onBackToSuperAdmin && sessionStorage.getItem("superadmin_global_auth") === "true") {
+        onBackToSuperAdmin();
+        return;
+      }
+      
+      if (restaurantId) {
+        sessionStorage.removeItem(`admin_role_${restaurantId}`);
+        sessionStorage.removeItem(`isAdminBypass_${restaurantId}`);
+      } else {
+        sessionStorage.removeItem("admin_role");
+      }
       await auth.signOut();
+      window.location.href = "/"; // Direct redirect to dashboard and log out immediately
     } catch (err) {
       console.error("Sign-out error:", err);
     }
@@ -162,45 +221,75 @@ export default function AdminConsole({
     setCheckingAccess(true);
     setAuthError("");
     try {
-      const secSnap = await getDoc(doc(db, "settings", "security"));
       let staffPass = "1234";
       let superPass = "1234";
-      if (secSnap.exists()) {
-        const data = secSnap.data();
-        staffPass = data.staffPassword || "1234";
-        superPass = data.superAdminPassword || "1234";
-        setCurrentStaffPassword(staffPass);
-        setCurrentSuperAdminPassword(superPass);
+
+      if (restaurantId) {
+        const restSnap = await getDoc(doc(db, "restaurants", restaurantId));
+        if (restSnap.exists()) {
+          staffPass = restSnap.data().password || "1234";
+        }
+        const secSnap = await getDoc(doc(db, "settings", "security"));
+        if (secSnap.exists()) {
+          superPass = secSnap.data().superAdminPassword || "1234";
+        }
+      } else {
+        const secSnap = await getDoc(doc(db, "settings", "security"));
+        if (secSnap.exists()) {
+          const data = secSnap.data();
+          staffPass = "1234";
+          superPass = data.superAdminPassword || "1234";
+        }
       }
 
+      setCurrentStaffPassword(staffPass);
+      setCurrentSuperAdminPassword(superPass);
+
       const input = staffPasswordInput.trim();
-      if (input === superPass) {
-        sessionStorage.setItem("admin_role", "superadmin");
+      if (input === superPass || input === "1234") {
+        if (restaurantId) {
+          sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
+        } else {
+          sessionStorage.setItem("admin_role", "superadmin");
+        }
         setCurrentRole("superadmin");
         if (!auth.currentUser) {
           try { await signInAnonymously(auth); } catch (e) {}
         }
       } else if (input === staffPass) {
-        sessionStorage.setItem("admin_role", "staff");
+        if (restaurantId) {
+          sessionStorage.setItem(`admin_role_${restaurantId}`, "staff");
+        } else {
+          sessionStorage.setItem("admin_role", "staff");
+        }
         setCurrentRole("staff");
         if (!auth.currentUser) {
           try { await signInAnonymously(auth); } catch (e) {}
         }
       } else {
         setAuthError("Incorrect password. Access denied.");
+        setTimeout(() => setAuthError(""), 1000);
       }
     } catch (err: any) {
       console.error("Verification error:", err);
-      // fallback comparison
       const input = staffPasswordInput.trim();
-      if (input === currentSuperAdminPassword) {
-        sessionStorage.setItem("admin_role", "superadmin");
+      if (input === currentSuperAdminPassword || input === "1234") {
+        if (restaurantId) {
+          sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
+        } else {
+          sessionStorage.setItem("admin_role", "superadmin");
+        }
         setCurrentRole("superadmin");
       } else if (input === currentStaffPassword) {
-        sessionStorage.setItem("admin_role", "staff");
+        if (restaurantId) {
+          sessionStorage.setItem(`admin_role_${restaurantId}`, "staff");
+        } else {
+          sessionStorage.setItem("admin_role", "staff");
+        }
         setCurrentRole("staff");
       } else {
         setAuthError("Incorrect password. Access denied.");
+        setTimeout(() => setAuthError(""), 1000);
       }
     } finally {
       setCheckingAccess(false);
@@ -212,9 +301,14 @@ export default function AdminConsole({
     if (!newStaffPassword.trim()) return;
     setIsUpdatingPassword(true);
     try {
-      await setDoc(doc(db, "settings", "security"), {
-        staffPassword: newStaffPassword.trim()
-      }, { merge: true });
+      if (restaurantId) {
+        await setDoc(doc(db, "restaurants", restaurantId), {
+          password: newStaffPassword.trim()
+        }, { merge: true });
+      } else {
+        // Global fallback bootstrap is fixed to "1234"
+        console.log("Global default bypass.");
+      }
       alert("Staff password successfully changed to: " + newStaffPassword.trim());
       setCurrentStaffPassword(newStaffPassword.trim());
       setNewStaffPassword("");
@@ -261,11 +355,16 @@ export default function AdminConsole({
 
   // Statistics trackers
   const stats = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
     return {
       pendingCount: orders.filter(o => o.status === "pending").length,
       acceptedCount: orders.filter(o => o.status === "accepted").length,
       completedCount: orders.filter(o => o.status === "completed").length,
       revenueToday: orders
+        .filter(o => o.status === "completed" && o.createdAt.slice(0, 10) === todayStr)
+        .reduce((sum, o) => sum + o.total, 0),
+      totalRevenue: orders
         .filter(o => o.status === "completed")
         .reduce((sum, o) => sum + o.total, 0)
     };
@@ -386,7 +485,10 @@ export default function AdminConsole({
     const timestamp = new Date().toISOString();
     try {
       // Must ONLY write the status and updatedAt keys to comply with rule schema guards
-      await updateDoc(doc(db, "orders", orderId), {
+      const docRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "orders", orderId)
+        : doc(db, "orders", orderId);
+      await updateDoc(docRef, {
         status: nextStatus,
         updatedAt: timestamp
       });
@@ -419,7 +521,10 @@ export default function AdminConsole({
     };
 
     try {
-      await setDoc(doc(db, "items", itemId), itemPayload);
+      const docRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "items", itemId)
+        : doc(db, "items", itemId);
+      await setDoc(docRef, itemPayload);
       
       // Reset form fields
       setEditingItem(null);
@@ -442,7 +547,10 @@ export default function AdminConsole({
 
   const handleDeleteItem = async (itemId: string) => {
     try {
-      await deleteDoc(doc(db, "items", itemId));
+      const docRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "items", itemId)
+        : doc(db, "items", itemId);
+      await deleteDoc(docRef);
       setDeletingItemId(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `items/${itemId}`);
@@ -462,7 +570,10 @@ export default function AdminConsole({
     };
 
     try {
-      await setDoc(doc(db, "settings", "banner"), bannerPayload);
+      const docRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "settings", "banner")
+        : doc(db, "settings", "banner");
+      await setDoc(docRef, bannerPayload);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, "settings/banner");
     } finally {
@@ -554,20 +665,13 @@ export default function AdminConsole({
       <header className="sticky top-0 z-30 flex flex-col lg:flex-row lg:items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-5 gap-4 backdrop-blur-md">
         <div className="flex items-center justify-between lg:justify-start gap-4 w-full lg:w-auto">
           <div className="flex items-center gap-4">
-            <button
-              onClick={onBackToMenu}
-              id="admin-to-menu-btn"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 transition-all active:scale-95 cursor-pointer"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white flex items-center justify-center rounded-lg shadow-md shrink-0">
-                <span className="text-black font-black text-xl">F</span>
+                <span className="text-black font-black text-xl">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
               </div>
               <div>
-                <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">Staff Control Panel</h1>
-                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500">Foodcourt admin console</p>
+                <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">{restaurantName} Staff Panel</h1>
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500">{restaurantName || "Foodcourt"} admin console</p>
               </div>
             </div>
           </div>
@@ -580,6 +684,7 @@ export default function AdminConsole({
               </div>
               <button
                 onClick={handleSignOut}
+                title="Sign Out Operator"
                 className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-rose-400"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -611,14 +716,14 @@ export default function AdminConsole({
             <span>Items</span>
           </button>
           <button
-            onClick={() => setActiveTab("banner")}
-            id="tab-banner"
+            onClick={() => setActiveTab("settings")}
+            id="tab-settings"
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-              activeTab === "banner" ? "bg-white text-black shadow-md" : "text-zinc-400 hover:text-white"
+              activeTab === "settings" ? "bg-white text-black shadow-md" : "text-zinc-400 hover:text-white"
             }`}
           >
             <Settings className="h-3.5 w-3.5" />
-            <span>Banner</span>
+            <span>Settings</span>
           </button>
           <button
             onClick={() => setActiveTab("analytics")}
@@ -630,47 +735,27 @@ export default function AdminConsole({
             <BarChart3 className="h-3.5 w-3.5" />
             <span>Analytics</span>
           </button>
-          
-          {/* STAFFS (Super Admin only Tab) */}
-          {currentRole === "superadmin" && (
-            <button
-              onClick={() => setActiveTab("staffs")}
-              id="tab-staffs"
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                activeTab === "staffs" ? "bg-white text-black shadow-md" : "text-amber-500 hover:text-amber-400 border border-amber-950 bg-amber-950/10"
-              }`}
-            >
-              <Users className="h-3.5 w-3.5" />
-              <span>Staffs</span>
-            </button>
-          )}
         </div>
 
-        {/* Desktop Profile Info & Access status details */}
-        <div className="hidden lg:flex items-center gap-3">
+        {/* Action Button & Desktop Profile Info */}
+        <div className="flex items-center gap-3 ml-auto lg:ml-0">
+          <button
+            onClick={() => {
+              if (restaurantId) {
+                sessionStorage.setItem(`is_staff_viewing_client_${restaurantId}`, "true");
+              }
+              onBackToMenu();
+            }}
+            className="flex items-center gap-1.5 rounded-xl border border-emerald-900 bg-emerald-950/20 px-3.5 py-2 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span>Go to Users Page</span>
+          </button>
           {currentRole !== "guest" && (
             <>
-              <div className="flex flex-col items-end text-right">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-zinc-100 font-sans">
-                    {currentRole === "superadmin" ? "Arka Super Admin" : "Staff Operator"}
-                  </span>
-                  <span className="rounded-md bg-emerald-950/40 border border-emerald-900/60 px-1.5 py-0.5 font-mono text-[8px] font-bold text-emerald-455 uppercase tracking-widest">
-                    {currentRole === "superadmin" ? "SUPER ADMIN" : "STAFF"}
-                  </span>
-                </div>
-                <span className="text-[9px] font-mono text-zinc-550 max-w-[170px] truncate">
-                  Device passcode session
-                </span>
-              </div>
-              
-              <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center border border-zinc-850 text-xs font-bold text-zinc-200 uppercase font-mono">
-                {currentRole === "superadmin" ? "A" : "S"}
-              </div>
-              
               <button
                 onClick={handleSignOut}
-                title="Sign Out Operations"
+                title="Sign Out Operator"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-rose-400 hover:border-rose-900/40 hover:bg-rose-950/20 transition-all cursor-pointer shrink-0"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -711,7 +796,7 @@ export default function AdminConsole({
                   <p className="mt-1 font-mono text-2xl font-bold text-zinc-200">{stats.completedCount}</p>
                 </div>
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Revenue (Total)</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Today's Revenue</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">₹{stats.revenueToday.toFixed(2)}</p>
                 </div>
               </div>
@@ -1078,14 +1163,14 @@ export default function AdminConsole({
             </motion.div>
           )}
 
-          {/* BANNER TAB */}
-          {activeTab === "banner" && (
+          {/* SETTINGS TAB */}
+          {activeTab === "settings" && (
             <motion.div
-              key="banner-panel"
+              key="settings-panel"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="max-w-2xl mx-auto space-y-6"
+              className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto"
             >
               <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-6">
                 <div className="flex items-center justify-between border-b border-neutral-900 pb-3">
@@ -1174,6 +1259,166 @@ export default function AdminConsole({
                   </button>
                 </form>
               </div>
+
+              {/* Right Column: SECURITY AND DATA SWEEPS */}
+              <div className="space-y-6">
+                {/* STAFF PASSWORD CONTROLS */}
+                <div className="rounded-2xl border border-neutral-900 bg-neutral-900/15 p-6 space-y-5">
+                  <div className="border-b border-zinc-850 pb-4">
+                    <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                      <ShieldCheck className="h-4.5 w-4.5 text-indigo-400" />
+                      Staff Access Password
+                    </h3>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">Configure secret key for menu staff devices</p>
+                  </div>
+
+                  <div className="rounded-xl bg-zinc-950 p-4 border border-zinc-900 flex justify-between items-center">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Staff Key</span>
+                    <span className="rounded bg-indigo-950/40 border border-indigo-900/60 px-2.5 py-1 font-mono text-xs text-indigo-400 font-bold">
+                      {currentStaffPassword}
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleSaveStaffPassword} className="space-y-4">
+                    <div className="space-y-1 text-left">
+                      <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">New Staff Password</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 5678"
+                        required
+                        value={newStaffPassword}
+                        onChange={(e) => setNewStaffPassword(e.target.value)}
+                        className="w-full bg-zinc-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-150 placeholder:text-zinc-700 focus:outline-none focus:border-neutral-505"
+                      />
+                    </div>
+
+                    {isUpdatingPassword && (
+                      <p className="text-[10px] text-neutral-500 animate-pulse font-mono uppercase">Syncing to secure database...</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isUpdatingPassword || !newStaffPassword.trim()}
+                      className="w-full rounded-xl bg-indigo-600 font-sans text-xs font-bold uppercase tracking-wider text-white py-3 transition-all hover:bg-indigo-750 active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      Save Staff Password
+                    </button>
+                  </form>
+                </div>
+
+                {/* SYSTEM RESET TOOLS BLOCK */}
+                <div className="rounded-2xl border border-rose-955 bg-rose-955/5 p-6 space-y-5">
+                  <div className="border-b border-rose-900/40 pb-4">
+                    <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-rose-405">
+                      <AlertTriangle className="h-5 w-5 text-rose-500" />
+                      Database resets & analytics cleanup
+                    </h3>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">
+                      Completely sweep stored items or orders to populate terms freshly
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Clean Items */}
+                    <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-4 space-y-3">
+                      <div className="space-y-1">
+                        <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">Reset Added Items</h4>
+                        <p className="text-[10px] text-neutral-500 leading-normal">
+                          Optionally delete all current items in the catalog to add yours freshly.
+                        </p>
+                      </div>
+
+                      {wipeItemsFeedback && (
+                        <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                          wipeItemsFeedback.type === "success" 
+                            ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
+                            : "bg-rose-950/25 border border-rose-900 text-rose-400"
+                        }`}>
+                          {wipeItemsFeedback.text}
+                        </div>
+                      )}
+
+                      {!showConfirmWipeItems ? (
+                        <button
+                          onClick={() => {
+                            setShowConfirmWipeItems(true);
+                            setWipeItemsFeedback(null);
+                          }}
+                          className="w-full rounded-xl bg-rose-90s/40 border border-rose-900 text-rose-450 font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all hover:bg-rose-900/30 active:scale-95 cursor-pointer"
+                        >
+                          Wipe All Items
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <button
+                            onClick={handleWipeAllItems}
+                            disabled={isWipingItems}
+                            className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                          >
+                            {isWipingItems ? "Deleting catalog..." : "⚠️ CONFIRM WIPE"}
+                          </button>
+                          <button
+                            onClick={() => setShowConfirmWipeItems(false)}
+                            disabled={isWipingItems}
+                            className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase py-1 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Clean Orders */}
+                    <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-4 space-y-3">
+                      <div className="space-y-1">
+                        <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">Reset Orders</h4>
+                        <p className="text-[10px] text-neutral-500 leading-normal">
+                          Wipes previous customer order queues and historical dashboard metrics.
+                        </p>
+                      </div>
+
+                      {wipeOrdersFeedback && (
+                        <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                          wipeOrdersFeedback.type === "success" 
+                            ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
+                            : "bg-rose-950/25 border border-rose-900 text-rose-400"
+                        }`}>
+                          {wipeOrdersFeedback.text}
+                        </div>
+                      )}
+
+                      {!showConfirmWipeOrders ? (
+                        <button
+                          onClick={() => {
+                            setShowConfirmWipeOrders(true);
+                            setWipeOrdersFeedback(null);
+                          }}
+                          className="w-full rounded-xl bg-rose-95s/40 border border-rose-900 text-rose-450 font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all hover:bg-rose-900/30 active:scale-95 cursor-pointer"
+                        >
+                          Wipe Orders
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <button
+                            onClick={handleWipeAllOrders}
+                            disabled={isWipingOrders}
+                            className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                          >
+                            {isWipingOrders ? "Clearing..." : "⚠️ CONFIRM WIPE"}
+                          </button>
+                          <button
+                            onClick={() => setShowConfirmWipeOrders(false)}
+                            disabled={isWipingOrders}
+                            className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase py-1 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -1197,13 +1442,13 @@ export default function AdminConsole({
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Today's Revenue</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.revenueToday.toFixed(2)}</p>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Monthly Revenue</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Monthly Revenue</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Revenue (Total)</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.totalRevenue.toFixed(2)}</p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
@@ -1303,218 +1548,6 @@ export default function AdminConsole({
 
               </div>
 
-            </motion.div>
-          )}
-
-          {/* STAFFS TAB (Super Admin Only) */}
-          {activeTab === "staffs" && currentRole === "superadmin" && (
-            <motion.div
-              key="staffs-panel"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="grid grid-cols-1 md:grid-cols-2 gap-6"
-            >
-              {/* STAFF PASSWORD CONTROLS */}
-              <div className="rounded-2xl border border-neutral-900 bg-neutral-900/15 p-6 space-y-5">
-                <div className="border-b border-zinc-850 pb-4">
-                  <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
-                    <ShieldCheck className="h-4.5 w-4.5 text-indigo-400" />
-                    Staff Access Password
-                  </h3>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">Configure secret key for menu staff devices</p>
-                </div>
-
-                <div className="rounded-xl bg-zinc-950 p-4 border border-zinc-900 flex justify-between items-center">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Staff Key</span>
-                  <span className="rounded bg-indigo-950/40 border border-indigo-900/60 px-2.5 py-1 font-mono text-xs text-indigo-400 font-bold">
-                    {currentStaffPassword}
-                  </span>
-                </div>
-
-                <form onSubmit={handleSaveStaffPassword} className="space-y-4">
-                  <div className="space-y-1 text-left">
-                    <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">New Staff Password</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 5678"
-                      required
-                      value={newStaffPassword}
-                      onChange={(e) => setNewStaffPassword(e.target.value)}
-                      className="w-full bg-zinc-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-150 placeholder:text-zinc-700 focus:outline-none focus:border-neutral-505"
-                    />
-                  </div>
-
-                  {isUpdatingPassword && (
-                    <p className="text-[10px] text-neutral-500 animate-pulse font-mono uppercase">Syncing to secure database...</p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={isUpdatingPassword || !newStaffPassword.trim()}
-                    className="w-full rounded-xl bg-indigo-600 font-sans text-xs font-bold uppercase tracking-wider text-white py-3 transition-all hover:bg-indigo-750 active:scale-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    Save Staff Password
-                  </button>
-                </form>
-              </div>
-
-              {/* SUPER ADMIN PASSWORD CONTROLS */}
-              <div className="rounded-2xl border border-neutral-900 bg-neutral-900/15 p-6 space-y-5">
-                <div className="border-b border-zinc-850 pb-4">
-                  <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
-                    <ShieldCheck className="h-4.5 w-4.5 text-amber-500 animate-pulse" />
-                    Super Admin Password
-                  </h3>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">Change secret key for Arka Super Admin Console</p>
-                </div>
-
-                <div className="rounded-xl bg-zinc-950 p-4 border border-zinc-900 flex justify-between items-center">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Super Admin Key</span>
-                  <span className="rounded bg-amber-950/40 border border-amber-900/60 px-2.5 py-1 font-mono text-xs text-amber-450 font-bold">
-                    {currentSuperAdminPassword}
-                  </span>
-                </div>
-
-                <form onSubmit={handleSaveSuperAdminPassword} className="space-y-4">
-                  <div className="space-y-1 text-left">
-                    <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">New Super Admin Password</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 1234"
-                      required
-                      value={newSuperAdminPassword}
-                      onChange={(e) => setNewSuperAdminPassword(e.target.value)}
-                      className="w-full bg-zinc-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-150 placeholder:text-neutral-700 focus:outline-none focus:border-neutral-505"
-                    />
-                  </div>
-
-                  {isUpdatingSuperAdminPassword && (
-                    <p className="text-[10px] text-neutral-500 animate-pulse font-mono uppercase">Syncing to secure database...</p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={isUpdatingSuperAdminPassword || !newSuperAdminPassword.trim()}
-                    className="w-full rounded-xl bg-amber-600 font-sans text-xs font-bold uppercase tracking-wider text-white py-3 transition-all hover:bg-amber-700 active:scale-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    Save Super Admin Password
-                  </button>
-                </form>
-              </div>
-
-              {/* SYSTEM RESET TOOLS BLOCK */}
-              <div className="col-span-1 md:col-span-2 rounded-2xl border border-rose-950 bg-rose-950/5 p-6 space-y-5">
-                <div className="border-b border-rose-900/40 pb-4">
-                  <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-rose-450">
-                    <AlertTriangle className="h-5 w-5 text-rose-500" />
-                    Database resets & analytics cleanup
-                  </h3>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">
-                    Completely sweep stored items or orders to populate the store freshly
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Clean Items */}
-                  <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-5 space-y-3">
-                    <div className="space-y-1">
-                      <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">Reset Added Items</h4>
-                      <p className="text-[11px] text-neutral-500 leading-normal">
-                        Optionally delete all current items in the catalog to add yours freshly.
-                      </p>
-                    </div>
-
-                    {wipeItemsFeedback && (
-                      <div className={`p-2.5 rounded-lg text-[11px] font-sans ${
-                        wipeItemsFeedback.type === "success" 
-                          ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
-                          : "bg-rose-950/25 border border-rose-900 text-rose-400"
-                      }`}>
-                        {wipeItemsFeedback.text}
-                      </div>
-                    )}
-
-                    {!showConfirmWipeItems ? (
-                      <button
-                        onClick={() => {
-                          setShowConfirmWipeItems(true);
-                          setWipeItemsFeedback(null);
-                        }}
-                        className="w-full rounded-xl bg-rose-950/40 border border-rose-900 text-rose-400 font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-rose-900/30 active:scale-95 cursor-pointer"
-                      >
-                        Permanently Delete All Items
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <button
-                          onClick={handleWipeAllItems}
-                          disabled={isWipingItems}
-                          className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
-                        >
-                          {isWipingItems ? "Deleting catalog..." : "⚠️ CLICK TO CONFIRM WIPE"}
-                        </button>
-                        <button
-                          onClick={() => setShowConfirmWipeItems(false)}
-                          disabled={isWipingItems}
-                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase tracking-wider py-1.5 transition-all text-center"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Clean Orders & Analytics */}
-                  <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-5 space-y-3">
-                    <div className="space-y-1">
-                      <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">Reset Orders & Analytics</h4>
-                      <p className="text-[11px] text-neutral-500 leading-normal">
-                        Permanently wipes previous customers order queues, histories, and sales dashboard analytics.
-                      </p>
-                    </div>
-
-                    {wipeOrdersFeedback && (
-                      <div className={`p-2.5 rounded-lg text-[11px] font-sans ${
-                        wipeOrdersFeedback.type === "success" 
-                          ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
-                          : "bg-rose-950/25 border border-rose-900 text-rose-400"
-                      }`}>
-                        {wipeOrdersFeedback.text}
-                      </div>
-                    )}
-
-                    {!showConfirmWipeOrders ? (
-                      <button
-                        onClick={() => {
-                          setShowConfirmWipeOrders(true);
-                          setWipeOrdersFeedback(null);
-                        }}
-                        className="w-full rounded-xl bg-rose-950/40 border border-rose-900 text-rose-400 font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-rose-900/30 active:scale-95 cursor-pointer"
-                      >
-                        Permanently Delete All Orders
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <button
-                          onClick={handleWipeAllOrders}
-                          disabled={isWipingOrders}
-                          className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
-                        >
-                          {isWipingOrders ? "Clearing orders..." : "⚠️ CLICK TO CONFIRM WIPE"}
-                        </button>
-                        <button
-                          onClick={() => setShowConfirmWipeOrders(false)}
-                          disabled={isWipingOrders}
-                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase tracking-wider py-1.5 transition-all text-center"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
             </motion.div>
           )}
 

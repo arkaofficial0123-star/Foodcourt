@@ -1,23 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 1. Menu Items collection - allow full public access to read and write for seamless passcode-based management
-    match /items/{itemId} {
-      allow read, write: if true;
-    }
-
-    // 2. Orders collection - allow read, write, and delete for all operational flows
-    match /orders/{orderId} {
-      allow read, write: if true;
-    }
-
-    // 3. Settings collection
-    match /settings/banner {
-      allow read, write: if true;
-    }
-
-    match /settings/security {
+    // Grant full read & write permissions for all paths to support multi-tenant dynamically generated schemas
+    match /{document=**} {
       allow read, write: if true;
     }
   }

@@ -21,6 +21,8 @@ interface ClientMenuProps {
   bannerSettings: BannerSettings | null;
   onBackToTableSelect: () => void;
   onGoToAdmin: () => void;
+  restaurantId?: string | null;
+  restaurantName?: string;
 }
 
 export default function ClientMenu({ 
@@ -29,7 +31,9 @@ export default function ClientMenu({
   orders,
   bannerSettings,
   onBackToTableSelect,
-  onGoToAdmin
+  onGoToAdmin,
+  restaurantId = null,
+  restaurantName = "Foodcourt"
 }: ClientMenuProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -134,7 +138,10 @@ export default function ClientMenu({
 
     try {
       // Create Document in Firestore orders collection
-      await setDoc(doc(db, "orders", orderId), orderPayload);
+      const orderDocRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "orders", orderId)
+        : doc(db, "orders", orderId);
+      await setDoc(orderDocRef, orderPayload);
       
       // Save order metadata for confirmation layout
       setPlacedOrder({
@@ -179,14 +186,18 @@ export default function ClientMenu({
         </div>
 
         {/* Branding/Secret Gateway link */}
-        <button
-          onClick={onGoToAdmin}
-          id="staff-console-gateway"
-          className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 hover:text-zinc-100 uppercase tracking-widest transition-all border border-zinc-800 px-3.5 py-1.5 rounded-full bg-zinc-950 cursor-pointer active:scale-95"
-        >
-          <QrCode className="h-4 w-4" />
-          <span className="hidden sm:inline">Staff Mode</span>
-        </button>
+        {(sessionStorage.getItem(`admin_role_${restaurantId}`) === "staff" || 
+          sessionStorage.getItem(`admin_role_${restaurantId}`) === "superadmin" || 
+          sessionStorage.getItem("admin_role") === "superadmin") && (
+          <button
+            onClick={onGoToAdmin}
+            id="staff-console-gateway"
+            className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 hover:text-zinc-100 uppercase tracking-widest transition-all border border-zinc-800 px-3.5 py-1.5 rounded-full bg-zinc-950 cursor-pointer active:scale-95 animate-pulse"
+          >
+            <QrCode className="h-4 w-4" />
+            <span className="hidden sm:inline">Staff Mode</span>
+          </button>
+        )}
       </header>
 
       {/* Dynamic announcements banner inside client menu workspace */}

@@ -1,5 +1,29 @@
 {
   "entities": {
+    "Restaurant": {
+      "title": "Restaurant",
+      "description": "A restaurant tenant instance",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique URL slug for the restaurant"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the restaurant"
+        },
+        "password": {
+          "type": "string",
+          "description": "Local staff/admin entry password"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp indicating when restaurant tenant was registered"
+        }
+      },
+      "required": ["id", "name", "password", "createdAt"]
+    },
     "Item": {
       "title": "Item",
       "description": "A restaurant menu item/dish",
@@ -91,17 +115,21 @@
     }
   },
   "firestore": {
-    "/items/{itemId}": {
+    "/restaurants/{restaurantId}": {
+      "schema": "Restaurant",
+      "description": "Registered restaurant instances"
+    },
+    "/restaurants/{restaurantId}/items/{itemId}": {
       "schema": "Item",
-      "description": "Collection of available menu items"
+      "description": "Tenant specific menu items"
     },
-    "/orders/{orderId}": {
+    "/restaurants/{restaurantId}/orders/{orderId}": {
       "schema": "Order",
-      "description": "Collection of tables and their placed orders"
+      "description": "Tenant specific active and completed orders"
     },
-    "/settings/banner": {
+    "/restaurants/{restaurantId}/settings/banner": {
       "schema": "Banner",
-      "description": "Single record representing the top promotional banner"
+      "description": "Tenant specific banner configuration"
     }
   }
 }
