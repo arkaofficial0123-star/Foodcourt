@@ -52,9 +52,10 @@ interface RestaurantTenant {
 interface SuperAdminConsoleProps {
   onBackToMain: () => void;
   onLaunchLocalBranch?: (slug: string) => void;
+  allRestaurants?: any[];
 }
 
-export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }: SuperAdminConsoleProps) {
+export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, allRestaurants }: SuperAdminConsoleProps) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem("superadmin_global_auth") === "true";
   });
@@ -64,10 +65,23 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
   const [authError, setAuthError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // Tenant state
-  const [restaurants, setRestaurants] = useState<RestaurantTenant[]>([]);
+  // Tenant state - prewarm with loaded parent dataset to ensure absolute instant load on first click
+  const [restaurants, setRestaurants] = useState<RestaurantTenant[]>(() => {
+    if (allRestaurants && allRestaurants.length > 0) {
+      return allRestaurants.map((r: any) => ({
+        id: r.id,
+        name: r.name || "",
+        password: r.password || "1234",
+        createdAt: r.createdAt || new Date().toISOString(),
+        isEnabled: r.isEnabled !== false
+      })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => {
+    return !(allRestaurants && allRestaurants.length > 0);
+  });
 
   // Dynamic panel states
   const [activePanel, setActivePanel] = useState<"list" | "register" | "globalSettings" >("list");
@@ -269,25 +283,21 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
     const slugClean = newSlug.trim();
     if (!slugClean) {
       setCreateError("Please enter a valid unique branch ID.");
-      setTimeout(() => setCreateError(""), 1000);
       return;
     }
 
     if (/\s/.test(slugClean)) {
       setCreateError("Branch ID (username) cannot contain any spaces.");
-      setTimeout(() => setCreateError(""), 1000);
       return;
     }
 
     if (slugClean.includes("/")) {
       setCreateError("Branch ID cannot contain forward slashes (/).");
-      setTimeout(() => setCreateError(""), 1000);
       return;
     }
 
     if (restaurants.some(r => r.id.toLowerCase() === slugClean.toLowerCase())) {
       setCreateError(`Restaurant branch ID '${slugClean}' already exists.`);
-      setTimeout(() => setCreateError(""), 1000);
       return;
     }
 
@@ -327,14 +337,13 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
       setNewPassword("");
       setSuccessCreatedMsg(`Success! Branch "${payload.name}" (ID: ${slugClean}) has been created.`);
       setActivePanel("list");
-      // Auto dismiss after 1 second
+      // Auto dismiss after 3 seconds for success message
       setTimeout(() => {
         setSuccessCreatedMsg("");
-      }, 1000);
+      }, 3000);
     } catch (err: any) {
       console.error("Initialization error:", err);
       setCreateError("Initialization error: " + err.message);
-      setTimeout(() => setCreateError(""), 1000);
     } finally {
       setIsCreating(false);
     }
@@ -735,58 +744,59 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="rounded-2xl border border-zinc-900 bg-zinc-950 p-6 max-w-xl mx-auto space-y-6"
+              className="rounded-3xl border border-zinc-900 bg-zinc-950 p-8 max-w-2xl mx-auto space-y-8 shadow-2xl"
             >
-              <div className="space-y-1">
-                <h3 className="font-serif italic text-xl text-white">Create Restaurants</h3>
+              <div className="space-y-2 border-b border-zinc-900/60 pb-4">
+                <h3 className="font-serif italic text-3xl font-bold text-white tracking-tight">Create Restaurants</h3>
+                <p className="text-zinc-500 text-sm font-sans">Initialize a brand new business branch with its unique credentials</p>
               </div>
 
-              <form onSubmit={handleCreateRestaurant} className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">company name</label>
+              <form onSubmit={handleCreateRestaurant} className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2.5">
+                    <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">company name</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Downtown Foodcourt"
                       value={newName}
                       onChange={(e) => handleCompanyNameChange(e.target.value)}
-                      className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 font-sans shadow-inner transition-all"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-sans shadow-inner transition-all"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">username ID</label>
+                  <div className="space-y-2.5">
+                    <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">username ID</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. foodcourt"
                       value={newSlug}
                       onChange={(e) => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
-                      className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 font-mono shadow-inner transition-all"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-mono shadow-inner transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">password</label>
+                <div className="space-y-2.5">
+                  <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">password</label>
                   <input
                     type="text"
                     required
                     placeholder="Enter local staff log-in password..."
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 shadow-inner transition-all"
+                    className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-inner transition-all"
                   />
-                  <p className="text-xs text-zinc-500 font-sans mt-2">
-                    Used for the branch landing login. The slug URL will be: <code className="text-amber-500/95 font-mono bg-zinc-950 px-2 py-1 rounded border border-zinc-900">/restaurant/{newSlug || "slug"}</code>
+                  <p className="text-sm text-zinc-550 font-sans mt-3 leading-relaxed">
+                    Used for the branch landing login. The slug URL will be: <code className="text-amber-500 font-mono font-bold bg-zinc-950 px-2.5 py-1 rounded border border-zinc-900">/restaurant/{newSlug || "slug"}</code>
                   </p>
                 </div>
 
                 {createError && (
-                  <p className="text-xs text-rose-500 font-sans bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-lg">{createError}</p>
+                  <p className="text-sm text-rose-455 font-sans bg-rose-500/10 border border-rose-900/60 px-4 py-3.5 rounded-xl">{createError}</p>
                 )}
 
-                <div className="flex justify-end gap-3.5 pt-4 border-t border-zinc-900/60">
+                <div className="flex justify-end gap-4 pt-6 border-t border-zinc-900/60">
                   <button
                     type="button"
                     onClick={() => {
@@ -796,14 +806,14 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
                       setNewPassword("");
                       setActivePanel("list");
                     }}
-                    className="rounded-xl border border-zinc-800 hover:bg-zinc-900/40 px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
+                    className="rounded-2xl border border-zinc-800 hover:bg-zinc-900/40 px-6 py-4 text-sm font-black uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isCreating}
-                    className="rounded-xl bg-amber-500 hover:bg-amber-400 text-black px-7 py-3 text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-amber-500/10 active:scale-98 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
+                    className="rounded-2xl bg-amber-500 hover:bg-amber-400 text-black px-9 py-4 text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
                   >
                     {isCreating ? "Creating Branch..." : "Create Branch"}
                   </button>

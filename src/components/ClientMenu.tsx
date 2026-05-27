@@ -14,6 +14,17 @@ import { db, handleFirestoreError, OperationType } from "../firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 import Banner from "./Banner";
 
+const formatItemName = (name: string): string => {
+  if (!name) return "";
+  return name
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return "";
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+};
+
 interface ClientMenuProps {
   tableId: string;
   items: MenuItem[];
@@ -253,7 +264,7 @@ export default function ClientMenu({
                         #{order.id.slice(-5).toUpperCase()}
                       </span>
                       <span className="text-zinc-500 font-sans text-[11px] truncate max-w-[140px] sm:max-w-md">
-                        {order.items.map(i => `${i.name} (x${i.quantity})`).join(", ")}
+                        {order.items.map(i => `${formatItemName(i.name)} (x${i.quantity})`).join(", ")}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -308,7 +319,7 @@ export default function ClientMenu({
                 <div className="flex flex-col flex-1">
                   <div className="flex justify-between items-start mb-4 gap-2">
                     <h3 className="font-sans font-medium text-xs sm:text-sm text-zinc-200 group-hover:text-white transition-colors tracking-tight line-clamp-1">
-                      {item.name}
+                      {formatItemName(item.name)}
                     </h3>
                     <span className="text-zinc-400 font-mono text-xs sm:text-sm shrink-0">
                       ₹{item.price.toFixed(2)}
@@ -361,7 +372,7 @@ export default function ClientMenu({
               <div className="max-h-36 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-zinc-200">
                 {cart.map((item) => (
                   <div key={item.id} className="flex items-center justify-between text-sm py-1" id={`cart-item-${item.id}`}>
-                    <span className="font-sans font-semibold text-zinc-800">{item.name}</span>
+                    <span className="font-sans font-semibold text-zinc-800">{formatItemName(item.name)}</span>
                     <div className="flex items-center gap-4">
                       <span className="font-mono font-medium text-zinc-500">₹{(item.price * item.quantity).toFixed(2)}</span>
                       <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 p-1">

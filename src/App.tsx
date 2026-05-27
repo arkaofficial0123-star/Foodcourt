@@ -60,14 +60,29 @@ export default function App() {
   }, []);
 
   // 1. Initial pathname parsing & active route configuration
+  const isFirstRenderRef = React.useRef(true);
+
   useEffect(() => {
+    const isFirstRun = isFirstRenderRef.current;
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+    }
+
     const parseUrlRoute = () => {
       const path = window.location.pathname;
       const pathParts = path.split("/").filter(Boolean);
 
       if (pathParts[0] === "superadmin") {
-        setIsSuperAdmin(true);
-        setIsDataLoading(false);
+        if (isFirstRun) {
+          // Automatic logout of super admin dashboard on page refresh / load
+          sessionStorage.removeItem("superadmin_global_auth");
+          setIsSuperAdmin(false);
+          setIsDataLoading(false);
+          window.history.replaceState(null, "", "/");
+        } else {
+          setIsSuperAdmin(true);
+          setIsDataLoading(false);
+        }
       } else if (pathParts[0] === "restaurant" && pathParts[1]) {
         const slug = pathParts[1];
         setRestaurantId(slug);
@@ -95,8 +110,16 @@ export default function App() {
         const superParam = params.get("superadmin");
 
         if (superParam === "true" || window.location.hash === "#superadmin") {
-          setIsSuperAdmin(true);
-          setIsDataLoading(false);
+          if (isFirstRun) {
+            // Automatic logout on page refresh / load
+            sessionStorage.removeItem("superadmin_global_auth");
+            setIsSuperAdmin(false);
+            setIsDataLoading(false);
+            window.history.replaceState(null, "", "/");
+          } else {
+            setIsSuperAdmin(true);
+            setIsDataLoading(false);
+          }
         } else if (restParam) {
           setRestaurantId(restParam);
           if (tableParam) {
@@ -127,10 +150,8 @@ export default function App() {
     return () => window.removeEventListener("popstate", parseUrlRoute);
   }, []);
 
-  // 2. Fetch all restaurants if at root index
+  // 2. Fetch all restaurants globally (kept active always to support instant case-sensitive login and seamless navigation without fetching delay)
   useEffect(() => {
-    if (restaurantId || isSuperAdmin) return;
-
     const unsub = onSnapshot(collection(db, "restaurants"), (snapshot) => {
       const fetched: any[] = [];
       snapshot.forEach((docSnap) => {
@@ -145,7 +166,7 @@ export default function App() {
     });
 
     return unsub;
-  }, [restaurantId, isSuperAdmin]);
+  }, []);
 
   // 3. Attach Live listeners dynamically bound to core tenant branch namespaces
   useEffect(() => {
@@ -342,6 +363,7 @@ export default function App() {
   if (isSuperAdmin) {
     return (
       <SuperAdminConsole 
+        allRestaurants={allRestaurants}
         onBackToMain={() => {
           setIsSuperAdmin(false);
           window.history.pushState(null, "", "/");

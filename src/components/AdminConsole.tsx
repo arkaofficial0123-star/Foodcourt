@@ -27,6 +27,17 @@ interface AdminConsoleProps {
   onBackToSuperAdmin?: () => void;
 }
 
+const formatItemName = (name: string): string => {
+  if (!name) return "";
+  return name
+    .split(/\s+/)
+    .map((word) => {
+      if (!word) return "";
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+};
+
 // Pre-defined elegant default backgrounds if user does not upload a file
 const PRESET_IMAGES = [
   { name: "Dark Ember", value: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=400" },
@@ -510,11 +521,18 @@ export default function AdminConsole({
       return;
     }
 
-    const itemId = editingItem ? editingItem.id : "dish_" + Math.random().toString(36).substring(2, 12);
+    // Normalize item name for document ID (e.g. "Mango" -> "mango", "Potato" -> "potato")
+    const cleanId = itemName.trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    const itemId = editingItem 
+      ? editingItem.id 
+      : (cleanId || "dish_" + Math.random().toString(36).substring(2, 8));
     const timestamp = editingItem ? editingItem.createdAt : new Date().toISOString();
 
     const itemPayload = {
-      name: itemName.trim(),
+      name: formatItemName(itemName),
       price: priceNum,
       imageUrl: itemImageUrl || PRESET_IMAGES[0].value,
       createdAt: timestamp
@@ -843,126 +861,71 @@ export default function AdminConsole({
               ) : (
                 <div className="space-y-4" id="orders-list-block">
                   {sortedAndFilteredOrders.map((order) => {
-                    const isCompletedFilter = orderFilter === "completed";
-
                     return (
                       <div 
                         key={order.id} 
                         id={`order-entry-${order.id}`}
-                        className={isCompletedFilter 
-                          ? "rounded-xl border border-neutral-900/60 bg-[#0a0a0a]/40 p-4 space-y-3 transition-all text-sm sm:text-base hover:bg-[#0a0a0a]/60"
-                          : "rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-4 transition-all hover:bg-neutral-900/20"
-                        }
+                        className="rounded-xl border border-neutral-900/45 bg-[#080808]/65 p-3.5 transition-all hover:bg-[#0c0c0c]/85 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-md"
                       >
-                        {isCompletedFilter ? (
-                          <>
-                            {/* Compact Completed Row */}
-                            <div className="flex flex-wrap items-center justify-between gap-3 pb-1">
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-mono text-sm sm:text-base font-bold text-neutral-200">
-                                  #{order.id.slice(-5).toUpperCase()}
-                                </span>
-                                <span className="rounded bg-zinc-900 px-2 py-0.5 font-mono text-xs font-bold text-neutral-305">
-                                  {order.tableId}
-                                </span>
-                                <span className="font-sans text-xs text-zinc-400">
-                                  {new Date(order.createdAt).toLocaleTimeString()}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono text-sm sm:text-base font-bold text-neutral-100">₹{order.total.toFixed(2)}</span>
-                                <div className="flex items-center gap-1.5 text-emerald-500">
-                                  <CheckCircle2 className="h-4 w-4" />
-                                  <span className="font-sans text-xs sm:text-sm font-bold uppercase tracking-wider">Served</span>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Simple inline items list without huge table */}
-                            <div className="flex flex-wrap gap-2 pt-2.5 border-t border-neutral-900/40">
-                              {order.items.map((item) => (
-                                <span key={item.id} className="inline-block bg-neutral-950 border border-neutral-900/80 px-2.5 py-1 rounded text-xs sm:text-sm text-neutral-300 font-medium font-sans">
-                                  {item.name} <span className="text-zinc-500 font-mono text-xs font-bold">x{item.quantity}</span>
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-sm font-bold text-neutral-200">
-                                    Order #{order.id.slice(-5).toUpperCase()}
-                                  </span>
-                                  <span className="rounded-full bg-neutral-900 px-2 py-0.5 font-mono text-[10px] font-bold text-neutral-400">
-                                    {order.tableId}
-                                  </span>
-                                </div>
-                                <p className="font-sans text-xs text-neutral-600 mt-1">
-                                  Received {new Date(order.createdAt).toLocaleTimeString()}
-                                </p>
-                              </div>
+                        {/* Compact Row Info */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-grow min-w-0">
+                          <span className="font-mono font-black text-neutral-200 text-[13px] tracking-tight">
+                            #{order.id.slice(-5).toUpperCase()}
+                          </span>
+                          <span className="rounded bg-zinc-950 border border-zinc-800/60 px-2 py-0.5 font-mono text-[12px] font-black text-indigo-400">
+                            {order.tableId}
+                          </span>
+                          <span className="font-sans text-[11px] text-zinc-550 font-medium">
+                            {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className="text-zinc-800 select-none hidden sm:inline">|</span>
+                          
+                          {/* Simple ultra-compact items list with combined name and quantity e.g. "POTATO x2" — 20% larger text font sizes */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {order.items.map((item) => (
+                              <span 
+                                key={item.id} 
+                                className="inline-flex items-center bg-zinc-950 border border-zinc-900/90 px-3 py-1 rounded-md text-[12px] font-mono font-black text-zinc-100 shadow-sm" 
+                                style={{ textTransform: 'uppercase' }}
+                              >
+                                {formatItemName(item.name)} x{item.quantity}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
 
-                              {/* Order Operations Accept and Serve */}
-                              <div className="flex gap-2">
-                                {order.status === "pending" && (
-                                  <button
-                                    onClick={() => handleUpdateOrderStatus(order.id, "accepted")}
-                                    id={`accept-btn-${order.id}`}
-                                    className="rounded-xl border border-neutral-800 bg-neutral-950 py-2 px-5 font-sans text-xs font-semibold uppercase tracking-wider text-amber-500 transition-all hover:border-amber-500 hover:bg-amber-950/20 active:scale-95"
-                                  >
-                                    Accept Order
-                                  </button>
-                                )}
-                                {order.status === "accepted" && (
-                                  <button
-                                    onClick={() => handleUpdateOrderStatus(order.id, "completed")}
-                                    id={`serve-btn-${order.id}`}
-                                    className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-100 py-2 px-5 font-sans text-xs font-semibold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95"
-                                  >
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    <span>Serve / Complete</span>
-                                  </button>
-                                )}
-                                {order.status === "completed" && (
-                                  <div className="flex items-center gap-1 text-emerald-500">
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    <span className="font-sans text-xs font-bold uppercase tracking-widest">Served</span>
-                                  </div>
-                                )}
+                        {/* Price & Operation actions (for pending/processing/completed) */}
+                        <div className="flex items-center justify-between sm:justify-start gap-4 shrink-0 border-t border-neutral-950/60 sm:border-0 pt-2 sm:pt-0">
+                          <span className="font-mono font-black text-neutral-100 text-[13.5px] tracking-tight">₹{order.total.toFixed(0)}</span>
+                          
+                          <div className="flex items-center gap-2">
+                            {order.status === "pending" && (
+                              <button
+                                onClick={() => handleUpdateOrderStatus(order.id, "accepted")}
+                                id={`accept-btn-${order.id}`}
+                                className="rounded-xl border border-amber-500/25 bg-amber-500/10 hover:border-amber-500 hover:bg-amber-500 hover:text-black py-1.5 px-4 font-sans text-[11.5px] font-black uppercase tracking-wider text-amber-500 transition-all active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                Accept
+                              </button>
+                            )}
+                            {order.status === "accepted" && (
+                              <button
+                                onClick={() => handleUpdateOrderStatus(order.id, "completed")}
+                                id={`serve-btn-${order.id}`}
+                                className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-100 hover:bg-zinc-200 text-black py-1.5 px-4 font-sans text-[11.5px] font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                <span>Serve</span>
+                              </button>
+                            )}
+                            {order.status === "completed" && (
+                              <div className="flex items-center gap-1.5 text-emerald-500 font-bold text-[11.5px] uppercase tracking-wider">
+                                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                                <span>Served</span>
                               </div>
-                            </div>
-
-                            {/* Items details */}
-                            <div className="rounded-xl border border-neutral-950 bg-neutral-950/40 p-4">
-                              <table className="w-full text-left font-sans text-sm">
-                                <thead>
-                                  <tr className="border-b border-neutral-900 text-neutral-500 text-xs uppercase tracking-wider font-semibold">
-                                    <th className="pb-2">Item</th>
-                                    <th className="pb-2 text-right">Qty</th>
-                                    <th className="pb-2 text-right">Sum</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-neutral-900/50">
-                                  {order.items.map((item) => (
-                                    <tr key={item.id} className="text-neutral-300">
-                                      <td className="py-2.5 font-medium">{item.name}</td>
-                                      <td className="py-2.5 text-right font-mono text-neutral-400">{item.quantity}</td>
-                                      <td className="py-2.5 text-right font-mono text-neutral-400">
-                                        ₹{(item.price * item.quantity).toFixed(2)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                              <div className="flex justify-between items-center border-t border-neutral-900 pt-3 mt-1">
-                                <span className="font-sans text-xs font-semibold uppercase tracking-wider text-neutral-500">Order Revenue</span>
-                                <span className="font-mono text-base font-bold text-neutral-100">₹{order.total.toFixed(2)}</span>
-                              </div>
-                            </div>
-                          </>
-                        )}
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
@@ -1116,7 +1079,7 @@ export default function AdminConsole({
                             className="h-12 w-16 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900" 
                           />
                           <div className="min-w-0">
-                            <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{item.name}</h4>
+                            <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{formatItemName(item.name)}</h4>
                             <p className="font-mono text-xs text-neutral-500">₹{item.price.toFixed(2)}</p>
                           </div>
                         </div>
@@ -1490,7 +1453,7 @@ export default function AdminConsole({
                               <div className="flex items-center gap-2 max-w-[70%] truncate">
                                 <span className="font-mono text-zinc-500 w-4">{idx + 1}.</span>
                                 <img src={item.imageUrl} alt={item.name} className="w-6 h-6 rounded object-cover" referrerPolicy="no-referrer" />
-                                <span className="text-zinc-200 truncate">{item.name}</span>
+                                <span className="text-zinc-200 truncate">{formatItemName(item.name)}</span>
                               </div>
                               <div className="flex items-center gap-3 font-mono">
                                 <span className="text-zinc-100 font-bold">{item.qty} sold</span>
