@@ -265,10 +265,10 @@ export default function App() {
       return;
     }
 
-    // 1. Global Super Admin Match
+    // 1. Global Super Admin Match (Strict Case-Sensitive Username and Password)
     if (
-      (userIdTrim.toUpperCase() === superAdminCredentials.id.toUpperCase() && passwordTrim === superAdminCredentials.password) ||
-      (userIdTrim.toUpperCase() === "ADMIN" && passwordTrim === "1234")
+      (userIdTrim === superAdminCredentials.id && passwordTrim === superAdminCredentials.password) ||
+      (userIdTrim === "ADMIN" && passwordTrim === "1234")
     ) {
       setLoginSuccess("Verified. Launching admin center...");
       sessionStorage.setItem("superadmin_global_auth", "true");
@@ -280,10 +280,9 @@ export default function App() {
       return;
     }
 
-    // 2. Individual Restaurant Tenant matching by name or id
+    // 2. Individual Restaurant Tenant matching ONLY by unique ID (Strict Case-Sensitive matched by exact case-preserving string)
     const matchedBranch = allRestaurants.find(r => 
-      (r.name && r.name.toLowerCase() === userIdTrim.toLowerCase()) || 
-      (r.id && r.id.toLowerCase() === userIdTrim.toLowerCase())
+      r.id && r.id === userIdTrim
     );
 
     if (matchedBranch) {

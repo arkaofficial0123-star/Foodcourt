@@ -16,7 +16,8 @@ import {
   onSnapshot, 
   setDoc, 
   deleteDoc, 
-  getDoc 
+  getDoc,
+  getDocs
 } from "firebase/firestore";
 import { 
   Shield, 
@@ -90,6 +91,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
   // Edit password state
   const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
   const [editingPassword, setEditingPassword] = useState("");
+  const [editingSlug, setEditingSlug] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
   const [expandedRestaurantId, setExpandedRestaurantId] = useState<string | null>(null);
 
@@ -251,14 +254,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
     checkAndSeed();
   }, [isAuthenticated]);
 
-  // Handle name input change with auto slug suggestion
+  // Handle name input change with auto slug suggestion (no spaces, no hyphens)
   const handleCompanyNameChange = (val: string) => {
-    setNewName(val);
-    const autoSlug = val.toLowerCase()
-      .replace(/[^a-z0-9\s\-]/g, "") // remove irregular chars
-      .trim()
-      .replace(/\s+/g, "-")         // replace spaces with hyphens
-      .replace(/-+/g, "-");         // collapse duplicate hyphens
+    setNewName(val.toUpperCase());
+    const autoSlug = val.replace(/[^a-zA-Z0-9]/g, ""); // Keep alphanumeric chars (case-preserved, absolutely no spaces, no hyphens)
     setNewSlug(autoSlug);
   };
 
@@ -274,13 +273,19 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
       return;
     }
 
+    if (/\s/.test(slugClean)) {
+      setCreateError("Branch ID (username) cannot contain any spaces.");
+      setTimeout(() => setCreateError(""), 1000);
+      return;
+    }
+
     if (slugClean.includes("/")) {
       setCreateError("Branch ID cannot contain forward slashes (/).");
       setTimeout(() => setCreateError(""), 1000);
       return;
     }
 
-    if (restaurants.some(r => r.id === slugClean)) {
+    if (restaurants.some(r => r.id.toLowerCase() === slugClean.toLowerCase())) {
       setCreateError(`Restaurant branch ID '${slugClean}' already exists.`);
       setTimeout(() => setCreateError(""), 1000);
       return;
@@ -290,7 +295,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
     try {
       const restRef = doc(db, "restaurants", slugClean);
       const payload = {
-        name: newName.trim() || "Foodcourt",
+        name: newName.trim().toUpperCase() || "FOODCOURT",
         password: newPassword.trim(),
         createdAt: new Date().toISOString(),
         isEnabled: true
@@ -393,16 +398,117 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
     }
   };
 
-  // Save new passcode for local staff
-  const handleSaveRestaurantPassword = async (slug: string) => {
-    if (!editingPassword.trim()) return;
+  // Save new passcode and User ID for restaurant branch
+  const handleSaveBranchSettings = async (oldId: string) => {
+    const slugClean = editingSlug.trim();
+    const passwordClean = editingPassword.trim();
+    
+    if (!slugClean) {
+      alert("User ID cannot be empty.");
+      return;
+    }
+    
+    if (/[^a-zA-Z0-9]/.test(slugClean)) {
+      alert("User ID can only contain alphanumeric characters (no spaces, no hyphens, no special characters).");
+      return;
+    }
+    
+    if (!passwordClean) {
+      alert("Secret Passkey cannot be empty.");
+      return;
+    }
+
+    setIsSavingEdit(true);
     try {
-      await setDoc(doc(db, "restaurants", slug), {
-        password: editingPassword.trim()
-      }, { merge: true });
+      if (oldId !== slugClean) {
+        // Checking if target user id already exists (case-insensitive check)
+        const targetRef = doc(db, "restaurants", slugClean);
+        const targetSnap = await getDoc(targetRef);
+        if (targetSnap.exists() || restaurants.some(r => r.id.toLowerCase() === slugClean.toLowerCase() && r.id !== oldId)) {
+          alert(`The User ID "${slugClean}" already exists. Please choose a different one.`);
+          setIsSavingEdit(false);
+          return;
+        }
+
+        // Performing complete branch data and subcollections copy to the new User ID
+        // 1. Get old main document
+        const oldDocRef = doc(db, "restaurants", oldId);
+        const oldDocSnap = await getDoc(oldDocRef);
+        if (!oldDocSnap.exists()) {
+          throw new Error("Source restaurant branch does not exist.");
+        }
+        
+        const oldData = oldDocSnap.data();
+        const newData = {
+          ...oldData,
+          password: passwordClean
+        };
+
+        // Write new parent branch document
+        await setDoc(targetRef, newData);
+
+        // 2. Migrate 'items' subcollection
+        const oldItemsCol = collection(db, "restaurants", oldId, "items");
+        const itemsSnap = await getDocs(oldItemsCol);
+        const itemsPromises = itemsSnap.docs.map(itemDoc => {
+          const newItemRef = doc(db, "restaurants", slugClean, "items", itemDoc.id);
+          return setDoc(newItemRef, itemDoc.data());
+        });
+        await Promise.all(itemsPromises);
+
+        // 3. Migrate 'orders' subcollection
+        const oldOrdersCol = collection(db, "restaurants", oldId, "orders");
+        const ordersSnap = await getDocs(oldOrdersCol);
+        const ordersPromises = ordersSnap.docs.map(orderDoc => {
+          const newOrderRef = doc(db, "restaurants", slugClean, "orders", orderDoc.id);
+          return setDoc(newOrderRef, orderDoc.data());
+        });
+        await Promise.all(ordersPromises);
+
+        // 4. Migrate 'settings/banner' subdoc
+        const oldBannerRef = doc(db, "restaurants", oldId, "settings", "banner");
+        const bannerSnap = await getDoc(oldBannerRef);
+        if (bannerSnap.exists()) {
+          const newBannerRef = doc(db, "restaurants", slugClean, "settings", "banner");
+          await setDoc(newBannerRef, bannerSnap.data());
+        }
+
+        // 5. Delete all old documents (subcollection docs + main doc)
+        // Delete items docs
+        const deleteItemsPromises = itemsSnap.docs.map(itemDoc => {
+          return deleteDoc(doc(db, "restaurants", oldId, "items", itemDoc.id));
+        });
+        await Promise.all(deleteItemsPromises);
+
+        // Delete orders docs
+        const deleteOrdersPromises = ordersSnap.docs.map(orderDoc => {
+          return deleteDoc(doc(db, "restaurants", oldId, "orders", orderDoc.id));
+        });
+        await Promise.all(deleteOrdersPromises);
+
+        // Delete old banner doc
+        if (bannerSnap.exists()) {
+          await deleteDoc(oldBannerRef);
+        }
+
+        // Delete old parent doc
+        await deleteDoc(oldDocRef);
+
+        alert(`Successfully updated User ID to "${slugClean}" and passcode.`);
+      } else {
+        // Only Password was changed (or remained identical)
+        await setDoc(doc(db, "restaurants", oldId), {
+          password: passwordClean
+        }, { merge: true });
+        alert("Passcode successfully updated.");
+      }
+
       setEditingRepoId(null);
     } catch (err: any) {
-      alert("Error saving passcode: " + err.message);
+      console.error("Failed to save branch settings:", err);
+      alert("Error saving branch settings: " + err.message);
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -635,52 +741,52 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
                 <h3 className="font-serif italic text-xl text-white">Create Restaurants</h3>
               </div>
 
-              <form onSubmit={handleCreateRestaurant} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 font-bold">company name</label>
+              <form onSubmit={handleCreateRestaurant} className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">company name</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Downtown Foodcourt"
                       value={newName}
                       onChange={(e) => handleCompanyNameChange(e.target.value)}
-                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500 font-sans"
+                      className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 font-sans shadow-inner transition-all"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 font-bold">unique branch id (slug)</label>
+                  <div className="space-y-1.5">
+                    <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">username ID</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. foodcourt"
                       value={newSlug}
-                      onChange={(e) => setNewSlug(e.target.value)}
-                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500 font-mono"
+                      onChange={(e) => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
+                      className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 font-mono shadow-inner transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 font-bold">password</label>
+                <div className="space-y-1.5">
+                  <label className="font-mono text-xs uppercase tracking-widest text-zinc-400 font-bold block">password</label>
                   <input
                     type="text"
                     required
                     placeholder="Enter local staff log-in password..."
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-zinc-500"
+                    className="w-full bg-zinc-900/80 border border-zinc-850 rounded-xl px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20 shadow-inner transition-all"
                   />
-                  <p className="text-[10px] text-zinc-600 font-sans mt-1">
-                    Used for the branch landing login. The slug URL will be: <code className="text-amber-500/95 font-mono bg-zinc-950 px-1 py-0.5 rounded">/restaurant/{newSlug || "slug"}</code>
+                  <p className="text-xs text-zinc-500 font-sans mt-2">
+                    Used for the branch landing login. The slug URL will be: <code className="text-amber-500/95 font-mono bg-zinc-950 px-2 py-1 rounded border border-zinc-900">/restaurant/{newSlug || "slug"}</code>
                   </p>
                 </div>
 
                 {createError && (
-                  <p className="text-xs text-rose-500 font-sans">{createError}</p>
+                  <p className="text-xs text-rose-500 font-sans bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-lg">{createError}</p>
                 )}
 
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex justify-end gap-3.5 pt-4 border-t border-zinc-900/60">
                   <button
                     type="button"
                     onClick={() => {
@@ -690,16 +796,16 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
                       setNewPassword("");
                       setActivePanel("list");
                     }}
-                    className="rounded-lg border border-zinc-900 hover:bg-zinc-900/20 px-4 py-2 text-xs font-bold uppercase transition-all duration-150 cursor-pointer"
+                    className="rounded-xl border border-zinc-800 hover:bg-zinc-900/40 px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isCreating}
-                    className="rounded-lg bg-amber-500 hover:bg-amber-600 text-black px-5 py-2 text-xs font-bold uppercase tracking-wider transition-all shadow active:scale-95 disabled:opacity-50 cursor-pointer"
+                    className="rounded-xl bg-amber-500 hover:bg-amber-400 text-black px-7 py-3 text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-amber-500/10 active:scale-98 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
                   >
-                    {isCreating ? "Creating..." : "Create"}
+                    {isCreating ? "Creating Branch..." : "Create Branch"}
                   </button>
                 </div>
               </form>
@@ -867,12 +973,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
                           </div>
                           
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 group-hover:text-zinc-300">
-                              {isExpanded ? "Hide Panel" : "View Options"}
-                            </span>
-                            <div className={`transform transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}>
-                              <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            <div className={`transform transition-transform duration-200 text-zinc-500 group-hover:text-zinc-300 ${isExpanded ? "rotate-180" : ""}`}>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
                               </svg>
                             </div>
                           </div>
@@ -919,55 +1022,76 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch }:
                               </div>
                             </div>
 
-                            {/* Middle Actions: PASSWORD MANAGEMENT */}
-                            <div className="flex items-center gap-3 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-900 max-w-sm w-full md:w-auto">
-                              <div className="flex-1 min-w-[125px]">
-                                <p className="font-mono text-[8px] uppercase tracking-widest text-zinc-555">Secret Passkey</p>
-                                
-                                {editingRepoId === restaurant.id ? (
-                                  <input
-                                    type="text"
-                                    value={editingPassword}
-                                    onChange={(e) => setEditingPassword(e.target.value)}
-                                    className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-2 py-1 rounded w-full font-mono font-bold mt-1 outline-none"
-                                  />
-                                ) : (
-                                  <p className="font-mono text-xs font-bold text-zinc-300 tracking-wider mt-1">
-                                    {showPasswords[restaurant.id] ? restaurant.password : "• • • • • • •"}
-                                  </p>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1.5 font-sans">
-                                <button
-                                  onClick={() => togglePasswordVisibility(restaurant.id)}
-                                  className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-                                  title="Show / Hide Password"
-                                >
-                                  {showPasswords[restaurant.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                </button>
-                                
-                                {editingRepoId === restaurant.id ? (
-                                  <button
-                                    onClick={() => handleSaveRestaurantPassword(restaurant.id)}
-                                    className="p-1 px-2.5 rounded bg-emerald-600 font-mono text-[9px] font-bold text-white uppercase hover:bg-emerald-700 transition cursor-pointer"
-                                  >
-                                    Save
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingRepoId(restaurant.id);
-                                      setEditingPassword(restaurant.password);
-                                    }}
-                                    className="p-1 px-2 border border-zinc-800 rounded font-mono text-[9px] text-zinc-400 uppercase hover:text-white transition cursor-pointer"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                             {/* Middle Actions: PASSWORD & USER ID MANAGEMENT */}
+                             <div className="flex items-start gap-3 bg-zinc-950/40 p-3 rounded-xl border border-zinc-900 max-w-sm w-full md:w-auto">
+                               <div className="flex-1 min-w-[140px] space-y-2.5">
+                                 <div>
+                                   <span className="font-mono text-[8px] uppercase tracking-widest text-amber-500 font-bold block">Exact User ID</span>
+                                   {editingRepoId === restaurant.id ? (
+                                     <input
+                                       type="text"
+                                       value={editingSlug}
+                                       onChange={(e) => setEditingSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
+                                       className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-2 py-1 rounded w-full font-mono font-bold mt-1 outline-none"
+                                       placeholder="e.g. foodcourt"
+                                       required
+                                     />
+                                   ) : (
+                                     <span className="font-mono text-xs font-extrabold text-[#ffffff] tracking-wider select-all block mt-0.5">
+                                       {restaurant.id}
+                                     </span>
+                                   )}
+                                 </div>
+                                 <div className="border-t border-zinc-900/40 pt-2">
+                                   <span className="font-mono text-[8px] uppercase tracking-widest text-zinc-500 block">Secret Passkey</span>
+                                   
+                                   {editingRepoId === restaurant.id ? (
+                                     <input
+                                       type="text"
+                                       value={editingPassword}
+                                       onChange={(e) => setEditingPassword(e.target.value)}
+                                       className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-2 py-1 rounded w-full font-mono font-bold mt-1 outline-none"
+                                     />
+                                   ) : (
+                                     <p className="font-mono text-xs font-bold text-zinc-300 tracking-wider mt-1">
+                                       {showPasswords[restaurant.id] ? restaurant.password : "• • • • • • •"}
+                                     </p>
+                                   )}
+                                 </div>
+                               </div>
+ 
+                               <div className="flex items-center gap-1.5 font-sans">
+                                 <button
+                                   onClick={() => togglePasswordVisibility(restaurant.id)}
+                                   className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+                                   title="Show / Hide Password"
+                                 >
+                                   {showPasswords[restaurant.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                 </button>
+                                 
+                                 {editingRepoId === restaurant.id ? (
+                                   <button
+                                     onClick={() => handleSaveBranchSettings(restaurant.id)}
+                                     disabled={isSavingEdit}
+                                     className="p-1 px-2.5 rounded bg-emerald-600 font-mono text-[9px] font-bold text-white uppercase hover:bg-emerald-700 transition cursor-pointer disabled:opacity-40"
+                                   >
+                                     {isSavingEdit ? "..." : "Save"}
+                                   </button>
+                                 ) : (
+                                   <button
+                                     onClick={(e) => {
+                                       e.stopPropagation();
+                                       setEditingRepoId(restaurant.id);
+                                       setEditingPassword(restaurant.password || "");
+                                       setEditingSlug(restaurant.id);
+                                     }}
+                                     className="p-1 px-2 border border-zinc-800 rounded font-mono text-[9px] text-zinc-400 uppercase hover:text-white transition cursor-pointer"
+                                   >
+                                     Edit
+                                   </button>
+                                 )}
+                               </div>
+                             </div>
 
                             {/* Right Action buttons */}
                             <div className="flex items-center gap-4 self-end md:self-auto font-sans">
