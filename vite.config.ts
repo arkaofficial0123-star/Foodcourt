@@ -11,8 +11,9 @@ export default defineConfig(() => {
       tailwindcss(),
       {
         name: 'optional-firebase-config',
+        enforce: 'pre',
         resolveId(id) {
-          if (id.endsWith('firebase-applet-config.json')) {
+          if (id.includes('firebase-applet-config.json')) {
             const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
             if (!fs.existsSync(configPath)) {
               return '\0firebase-applet-config.json';
