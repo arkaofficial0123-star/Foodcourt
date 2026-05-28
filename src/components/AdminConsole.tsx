@@ -25,6 +25,7 @@ interface AdminConsoleProps {
   restaurantId?: string | null;
   restaurantName?: string;
   onBackToSuperAdmin?: () => void;
+  onLogoutToLogin?: () => void;
 }
 
 const formatItemName = (name: string): string => {
@@ -53,7 +54,8 @@ export default function AdminConsole({
   onBackToMenu,
   restaurantId = null,
   restaurantName = "Foodcourt",
-  onBackToSuperAdmin
+  onBackToSuperAdmin,
+  onLogoutToLogin
 }: AdminConsoleProps) {
   const [activeTab, setActiveTab] = useState<"orders" | "items" | "settings" | "analytics">("orders");
   const [orderFilter, setOrderFilter] = useState<"pending" | "accepted" | "completed">("pending");
@@ -92,9 +94,7 @@ export default function AdminConsole({
     setWipeItemsFeedback(null);
     try {
       for (const item of items) {
-        const itemDocRef = restaurantId 
-          ? doc(db, "restaurants", restaurantId, "items", item.id) 
-          : doc(db, "items", item.id);
+        const itemDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id);
         await deleteDoc(itemDocRef);
       }
       setWipeItemsFeedback({
@@ -102,11 +102,17 @@ export default function AdminConsole({
         text: "Success: All items have been permanently deleted from the database."
       });
       setShowConfirmWipeItems(false);
+      setTimeout(() => {
+        setWipeItemsFeedback(null);
+      }, 2000);
     } catch (err: any) {
       setWipeItemsFeedback({
         type: "error",
         text: "Error wiping items: " + (err.message || String(err))
       });
+      setTimeout(() => {
+        setWipeItemsFeedback(null);
+      }, 2000);
     } finally {
       setIsWipingItems(false);
     }
@@ -117,9 +123,7 @@ export default function AdminConsole({
     setWipeOrdersFeedback(null);
     try {
       for (const order of orders) {
-        const orderDocRef = restaurantId 
-          ? doc(db, "restaurants", restaurantId, "orders", order.id) 
-          : doc(db, "orders", order.id);
+        const orderDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "orders", order.id);
         await deleteDoc(orderDocRef);
       }
       setWipeOrdersFeedback({
@@ -127,11 +131,17 @@ export default function AdminConsole({
         text: "Success: All orders and analytical records have been permanently cleared."
       });
       setShowConfirmWipeOrders(false);
+      setTimeout(() => {
+        setWipeOrdersFeedback(null);
+      }, 2000);
     } catch (err: any) {
       setWipeOrdersFeedback({
         type: "error",
         text: "Error wiping logs: " + (err.message || String(err))
       });
+      setTimeout(() => {
+        setWipeOrdersFeedback(null);
+      }, 2000);
     } finally {
       setIsWipingOrders(false);
     }
@@ -220,7 +230,11 @@ export default function AdminConsole({
         sessionStorage.removeItem("admin_role");
       }
       await auth.signOut();
-      window.location.href = "/"; // Direct redirect to dashboard and log out immediately
+      if (onLogoutToLogin) {
+        onLogoutToLogin();
+      } else {
+        window.location.href = "/";
+      }
     } catch (err) {
       console.error("Sign-out error:", err);
     }
@@ -257,7 +271,7 @@ export default function AdminConsole({
       setCurrentSuperAdminPassword(superPass);
 
       const input = staffPasswordInput.trim();
-      if (input === superPass || input === "1234") {
+      if (input === superPass) {
         if (restaurantId) {
           sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
         } else {
@@ -284,7 +298,7 @@ export default function AdminConsole({
     } catch (err: any) {
       console.error("Verification error:", err);
       const input = staffPasswordInput.trim();
-      if (input === currentSuperAdminPassword || input === "1234") {
+      if (input === currentSuperAdminPassword) {
         if (restaurantId) {
           sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
         } else {
@@ -362,6 +376,7 @@ export default function AdminConsole({
   const [bannerText, setBannerText] = useState(bannerSettings?.text || "");
   const [bannerImageUrl, setBannerImageUrl] = useState(bannerSettings?.imageUrl || "");
   const [bannerVisible, setBannerVisible] = useState(bannerSettings?.visible ?? false);
+  const [bannerBioVisible, setBannerBioVisible] = useState(bannerSettings?.bioVisible !== false);
   const [isUpdateBannerLoading, setIsUpdateBannerLoading] = useState(false);
 
   // Statistics trackers
@@ -539,9 +554,7 @@ export default function AdminConsole({
     };
 
     try {
-      const docRef = restaurantId
-        ? doc(db, "restaurants", restaurantId, "items", itemId)
-        : doc(db, "items", itemId);
+      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
       await setDoc(docRef, itemPayload);
       
       // Reset form fields
@@ -565,9 +578,7 @@ export default function AdminConsole({
 
   const handleDeleteItem = async (itemId: string) => {
     try {
-      const docRef = restaurantId
-        ? doc(db, "restaurants", restaurantId, "items", itemId)
-        : doc(db, "items", itemId);
+      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
       await deleteDoc(docRef);
       setDeletingItemId(null);
     } catch (err) {
@@ -584,13 +595,12 @@ export default function AdminConsole({
       text: bannerText.trim() || "Enjoy our fresh table offerings",
       imageUrl: bannerImageUrl || PRESET_IMAGES[2].value,
       visible: bannerVisible,
+      bioVisible: bannerBioVisible,
       updatedAt: new Date().toISOString()
     };
 
     try {
-      const docRef = restaurantId
-        ? doc(db, "restaurants", restaurantId, "settings", "banner")
-        : doc(db, "settings", "banner");
+      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "settings", "banner");
       await setDoc(docRef, bannerPayload);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, "settings/banner");
@@ -680,7 +690,7 @@ export default function AdminConsole({
   return (
     <div className="min-h-screen bg-[#050505] pb-20 text-zinc-100 flex flex-col" id="admin-dashboard-view">
       {/* Admin header */}
-      <header className="sticky top-0 z-30 flex flex-col lg:flex-row lg:items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-5 gap-4 backdrop-blur-md">
+      <header className="relative sticky top-0 z-30 flex flex-col lg:flex-row lg:items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-5 gap-4 backdrop-blur-md">
         <div className="flex items-center justify-between lg:justify-start gap-4 w-full lg:w-auto">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
@@ -693,22 +703,6 @@ export default function AdminConsole({
               </div>
             </div>
           </div>
-
-          {/* Compact identity on mobile view */}
-          {currentRole !== "guest" && (
-            <div className="flex items-center gap-2 lg:hidden">
-              <div className="w-7 h-7 rounded-full bg-zinc-850 flex items-center justify-center border border-zinc-750 text-[10px] font-bold text-zinc-200 uppercase font-mono">
-                {currentRole === "superadmin" ? "A" : "S"}
-              </div>
-              <button
-                onClick={handleSignOut}
-                title="Sign Out Operator"
-                className="p-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-rose-400"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Console Nav Tabs */}
@@ -756,7 +750,7 @@ export default function AdminConsole({
         </div>
 
         {/* Action Button & Desktop Profile Info */}
-        <div className="flex items-center gap-3 ml-auto lg:ml-0">
+        <div className="absolute top-6 right-8 lg:static flex items-center gap-3 z-40">
           <button
             onClick={() => {
               if (restaurantId) {
@@ -764,22 +758,18 @@ export default function AdminConsole({
               }
               onBackToMenu();
             }}
-            className="flex items-center gap-1.5 rounded-xl border border-emerald-900 bg-emerald-950/20 px-3.5 py-2 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0 shadow-md"
           >
             <Eye className="h-3.5 w-3.5" />
             <span>Go to Users Page</span>
           </button>
-          {currentRole !== "guest" && (
-            <>
-              <button
-                onClick={handleSignOut}
-                title="Sign Out Operator"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-rose-400 hover:border-rose-900/40 hover:bg-rose-950/20 transition-all cursor-pointer shrink-0"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
+          <button
+            onClick={handleSignOut}
+            title="Sign Out"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-rose-400 hover:border-rose-900/40 hover:bg-rose-950/20 transition-all cursor-pointer shrink-0"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
       </header>
 
@@ -865,45 +855,48 @@ export default function AdminConsole({
                       <div 
                         key={order.id} 
                         id={`order-entry-${order.id}`}
-                        className="rounded-xl border border-neutral-900/45 bg-[#080808]/65 p-3.5 transition-all hover:bg-[#0c0c0c]/85 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-md"
+                        className="rounded-lg border border-neutral-900/35 bg-[#080808]/70 p-2 sm:p-3 transition-all hover:bg-[#0c0c0c]/85 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 text-xs shadow-sm"
                       >
-                        {/* Compact Row Info */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-grow min-w-0">
-                          <span className="font-mono font-black text-neutral-200 text-[13px] tracking-tight">
-                            #{order.id.slice(-5).toUpperCase()}
-                          </span>
-                          <span className="rounded bg-zinc-950 border border-zinc-800/60 px-2 py-0.5 font-mono text-[12px] font-black text-indigo-400">
-                            {order.tableId}
-                          </span>
-                          <span className="font-sans text-[11px] text-zinc-550 font-medium">
-                            {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <span className="text-zinc-800 select-none hidden sm:inline">|</span>
-                          
-                          {/* Simple ultra-compact items list with combined name and quantity e.g. "POTATO x2" — 20% larger text font sizes */}
-                          <div className="flex flex-wrap items-center gap-2">
+                        {/* Main Info Blocks with items showing at the absolute top on mobile */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-x-4 gap-y-1.5 flex-grow min-w-0">
+                          {/* Dish Lists showing first on mobile screens ("Banana x1" is top-most) */}
+                          <div className="flex flex-wrap items-center gap-1.5 order-first sm:order-last mb-1 sm:mb-0">
                             {order.items.map((item) => (
                               <span 
                                 key={item.id} 
-                                className="inline-flex items-center bg-zinc-950 border border-zinc-900/90 px-3 py-1 rounded-md text-[12px] font-mono font-black text-zinc-100 shadow-sm" 
+                                className="inline-flex items-center bg-zinc-950 border border-zinc-900 px-2 py-0.5 rounded text-[11.5px] sm:text-[13px] font-mono font-black text-zinc-100 shadow-sm" 
                                 style={{ textTransform: 'uppercase' }}
                               >
                                 {formatItemName(item.name)} x{item.quantity}
                               </span>
                             ))}
                           </div>
+
+                          {/* Order metadata and identifiers */}
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 sm:order-first">
+                            <span className="font-mono font-black text-neutral-300 text-[13px] sm:text-[14px] tracking-tight">
+                              #{order.id.slice(-5).toUpperCase()}
+                            </span>
+                            <span className="rounded bg-zinc-950 border border-zinc-850 px-1.5 py-0.5 font-mono text-[12px] sm:text-[13px] font-black text-indigo-400">
+                              {order.tableId}
+                            </span>
+                            <span className="font-sans text-[11px] sm:text-[12.5px] text-zinc-550 font-medium">
+                              {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="text-zinc-800 select-none hidden sm:inline">|</span>
+                          </div>
                         </div>
 
                         {/* Price & Operation actions (for pending/processing/completed) */}
-                        <div className="flex items-center justify-between sm:justify-start gap-4 shrink-0 border-t border-neutral-950/60 sm:border-0 pt-2 sm:pt-0">
-                          <span className="font-mono font-black text-neutral-100 text-[13.5px] tracking-tight">₹{order.total.toFixed(0)}</span>
+                        <div className="flex items-center justify-between sm:justify-start gap-3 shrink-0 border-t border-neutral-950/35 sm:border-0 pt-1.5 sm:pt-0">
+                          <span className="font-mono font-black text-neutral-100 text-[13.5px] sm:text-[15px] tracking-tight">₹{order.total.toFixed(0)}</span>
                           
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             {order.status === "pending" && (
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, "accepted")}
                                 id={`accept-btn-${order.id}`}
-                                className="rounded-xl border border-amber-500/25 bg-amber-500/10 hover:border-amber-500 hover:bg-amber-500 hover:text-black py-1.5 px-4 font-sans text-[11.5px] font-black uppercase tracking-wider text-amber-500 transition-all active:scale-95 cursor-pointer shadow-sm"
+                                className="rounded-lg border border-amber-500/25 bg-amber-500/10 hover:border-amber-500 hover:bg-amber-500 hover:text-black py-1 px-3.5 font-sans text-[11px] sm:text-[12.5px] font-black uppercase tracking-wider text-amber-500 transition-all active:scale-95 cursor-pointer shadow-sm animate-none"
                               >
                                 Accept
                               </button>
@@ -912,15 +905,15 @@ export default function AdminConsole({
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, "completed")}
                                 id={`serve-btn-${order.id}`}
-                                className="flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-100 hover:bg-zinc-200 text-black py-1.5 px-4 font-sans text-[11.5px] font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-sm"
+                                className="flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-100 hover:bg-zinc-200 text-black py-1 px-3.5 font-sans text-[11px] sm:text-[12.5px] font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-sm"
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                 <span>Serve</span>
                               </button>
                             )}
                             {order.status === "completed" && (
-                              <div className="flex items-center gap-1.5 text-emerald-500 font-bold text-[11.5px] uppercase tracking-wider">
-                                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <div className="flex items-center gap-1 text-emerald-500 font-bold text-[11px] sm:text-[12.5px] uppercase tracking-wider">
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                 <span>Served</span>
                               </div>
                             )}
@@ -1136,28 +1129,51 @@ export default function AdminConsole({
               className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto"
             >
               <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-6">
-                <div className="flex items-center justify-between border-b border-neutral-900 pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-900 pb-3 gap-3">
                   <h3 className="font-sans text-sm font-semibold uppercase tracking-wider">Top Banner Controls</h3>
                   
-                  {/* Banner Show / Hide Toggle SWITCH */}
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">
-                      {bannerVisible ? "Visible" : "Hidden"}
-                    </span>
-                    <button
-                      type="button"
-                      id="banner-toggle-switch"
-                      onClick={() => setBannerVisible(!bannerVisible)}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
-                        bannerVisible ? "bg-neutral-100" : "bg-neutral-800"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ${
-                          bannerVisible ? "translate-x-5" : "translate-x-0"
+                  <div className="flex flex-wrap items-center gap-4">
+                    {/* Banner Image Toggle SWITCH */}
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
+                        Banner: {bannerVisible ? "On" : "Off"}
+                      </span>
+                      <button
+                        type="button"
+                        id="banner-image-toggle-switch"
+                        onClick={() => setBannerVisible(!bannerVisible)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
+                          bannerVisible ? "bg-neutral-100" : "bg-neutral-800"
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ${
+                            bannerVisible ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Banner Bio Toggle SWITCH */}
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
+                        Bio: {bannerBioVisible ? "On" : "Off"}
+                      </span>
+                      <button
+                        type="button"
+                        id="banner-bio-toggle-switch"
+                        onClick={() => setBannerBioVisible(!bannerBioVisible)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
+                          bannerBioVisible ? "bg-neutral-100" : "bg-neutral-800"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ${
+                            bannerBioVisible ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
 

@@ -174,23 +174,16 @@ export default function ClientMenu({
       {/* Dynamic Subheader/Table identifier */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-5 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <button
-            onClick={onBackToTableSelect}
-            id="back-btn"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-all active:scale-95 animate-none"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
           <div className="flex items-center gap-3">
             <div 
               onClick={handleLogoClick}
               className="w-10 h-10 bg-white flex items-center justify-center rounded-lg shadow-md shrink-0 cursor-pointer active:scale-95 transition-transform select-none"
-              title="Foodcourt"
+              title={restaurantName}
             >
-              <span className="text-black font-black text-xl">F</span>
+              <span className="text-black font-black text-xl">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
             </div>
             <div>
-              <h1 className="text-sm font-bold tracking-tight text-zinc-100">Foodcourt</h1>
+              <h1 className="text-sm font-bold tracking-tight text-zinc-100">{restaurantName}</h1>
               <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em]">Table {tableId}</p>
             </div>
           </div>

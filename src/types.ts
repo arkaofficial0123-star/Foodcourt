@@ -32,5 +32,6 @@ export interface BannerSettings {
   text: string;
   imageUrl: string;
   visible: boolean;
+  bioVisible?: boolean;
   updatedAt: string;
 }

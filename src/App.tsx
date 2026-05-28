@@ -244,6 +244,7 @@ export default function App() {
           text: d.text,
           imageUrl: d.imageUrl,
           visible: d.visible,
+          bioVisible: d.bioVisible,
           updatedAt: d.updatedAt,
         });
       } else {
@@ -279,31 +280,34 @@ export default function App() {
     const passwordTrim = formPassword.trim();
 
     if (!userIdTrim || !passwordTrim) {
-      setLoginError("Provide both ID Identity and Secret Passkey.");
+      setLoginError("INVALID PASSWORD !");
+      setFormUserId("");
+      setFormPassword("");
       setTimeout(() => {
         setLoginError("");
-      }, 1000);
+      }, 2000);
       return;
     }
 
-    // 1. Global Super Admin Match (Strict Case-Sensitive Username and Password)
+    // 1. Global Super Admin Match (Case-Insensitive Username, case-sensitive Password)
     if (
-      (userIdTrim === superAdminCredentials.id && passwordTrim === superAdminCredentials.password) ||
-      (userIdTrim === "ADMIN" && passwordTrim === "1234")
+      userIdTrim.toLowerCase() === superAdminCredentials.id.toLowerCase() && passwordTrim === superAdminCredentials.password
     ) {
       setLoginSuccess("Verified. Launching admin center...");
       sessionStorage.setItem("superadmin_global_auth", "true");
+      setFormUserId("");
+      setFormPassword("");
       setTimeout(() => {
         setLoginSuccess("");
         setIsSuperAdmin(true);
         window.history.pushState(null, "", "/superadmin");
-      }, 1000);
+      }, 2000);
       return;
     }
 
-    // 2. Individual Restaurant Tenant matching ONLY by unique ID (Strict Case-Sensitive matched by exact case-preserving string)
+    // 2. Individual Restaurant Tenant matching ONLY by unique ID (Case-Insensitive Username lookup)
     const matchedBranch = allRestaurants.find(r => 
-      r.id && r.id === userIdTrim
+      r.id && r.id.toLowerCase() === userIdTrim.toLowerCase()
     );
 
     if (matchedBranch) {
@@ -311,18 +315,22 @@ export default function App() {
       if (passwordTrim === correctPass) {
         setLoginSuccess(`Correct! Welcome to the ${matchedBranch.name} portal.`);
         sessionStorage.setItem(`admin_role_${matchedBranch.id}`, "staff");
+        setFormUserId("");
+        setFormPassword("");
         setTimeout(() => {
           setLoginSuccess("");
           handleSelectRestaurant(matchedBranch.id);
-        }, 1000);
+        }, 2000);
         return;
       }
     }
 
-    setLoginError("Invalid combination of ID Identity and Secret Passkey.");
+    setLoginError("INVALID PASSWORD !");
+    setFormUserId("");
+    setFormPassword("");
     setTimeout(() => {
       setLoginError("");
-    }, 1000);
+    }, 2000);
   };
 
   const handleSelectTableNum = (num: string) => {
@@ -366,6 +374,8 @@ export default function App() {
         allRestaurants={allRestaurants}
         onBackToMain={() => {
           setIsSuperAdmin(false);
+          setFormUserId("");
+          setFormPassword("");
           window.history.pushState(null, "", "/");
         }} 
         onLaunchLocalBranch={(slug) => {
@@ -405,7 +415,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-grow max-w-4xl mx-auto w-full px-8 py-16 flex flex-col items-center justify-center z-10 space-y-8">
+        <main className="flex-grow max-w-4xl mx-auto w-full px-8 pt-6 pb-16 flex flex-col items-center justify-center -mt-6 sm:-mt-12 z-10 space-y-6">
           <div className="text-center space-y-2">
             <h2 className="font-serif italic text-4xl sm:text-5xl text-white tracking-tight leading-normal">
               Foodcourt
@@ -419,20 +429,20 @@ export default function App() {
           <div className="w-full max-w-md rounded-3xl border border-zinc-900 bg-[#0a0a0c] p-6 sm:p-8 shadow-2xl relative space-y-6">
             <div className="space-y-1 text-center border-b border-zinc-900 pb-4">
               <h3 className="font-serif italic text-2xl text-white">Credentials</h3>
-              <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">Provide credentials below</p>
+              {loginError ? (
+                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-rose-500 font-bold animate-pulse">
+                  {loginError}
+                </p>
+              ) : loginSuccess ? (
+                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-500 font-bold animate-pulse">
+                  {loginSuccess}
+                </p>
+              ) : (
+                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">
+                  Provide credentials below
+                </p>
+              )}
             </div>
-
-            {loginError && (
-              <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-900/60 text-rose-400 text-xs font-sans text-center">
-                {loginError}
-              </div>
-            )}
-
-            {loginSuccess && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-900/60 text-emerald-400 text-xs font-sans animate-pulse text-center">
-                {loginSuccess}
-              </div>
-            )}
 
             <form onSubmit={handleGatewayLogin} className="space-y-4">
               {/* ID IDENTITY INPUT */}
@@ -516,6 +526,15 @@ export default function App() {
           onBackToMenu={() => handleToggleAdminMode(false)}
           restaurantId={restaurantId}
           restaurantName={restaurantName}
+          onLogoutToLogin={() => {
+            setRestaurantId(null);
+            setIsAdmin(false);
+            setIsCustomerView(false);
+            setTableId(null);
+            setFormUserId("");
+            setFormPassword("");
+            window.history.pushState(null, "", "/");
+          }}
           onBackToSuperAdmin={sessionStorage.getItem("superadmin_global_auth") === "true" ? () => {
             setRestaurantId(null);
             setIsSuperAdmin(true);

@@ -149,8 +149,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       const inputPass = masterPassword.trim();
 
       if (
-        (inputUser === allowedId && inputPass === allowedPass) || 
-        (inputUser.toUpperCase() === "ADMIN" && inputPass === "1234")
+        inputUser === allowedId && inputPass === allowedPass
       ) {
         sessionStorage.setItem("superadmin_global_auth", "true");
         setIsAuthenticated(true);
@@ -160,14 +159,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       }
     } catch (err: any) {
       console.error("Master check failed:", err);
-      const inputUser = masterUsername.trim() || "ADMIN";
-      if (inputUser.toUpperCase() === "ADMIN" && masterPassword.trim() === "1234") {
-        sessionStorage.setItem("superadmin_global_auth", "true");
-        setIsAuthenticated(true);
-      } else {
-        setAuthError("System offline. Default code '1234' is required.");
-        setTimeout(() => setAuthError(""), 1000);
-      }
+      setAuthError("System offline. Please check connection and try again.");
+      setTimeout(() => setAuthError(""), 2000);
     } finally {
       setIsVerifying(false);
     }
@@ -337,10 +330,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       setNewPassword("");
       setSuccessCreatedMsg(`Success! Branch "${payload.name}" (ID: ${slugClean}) has been created.`);
       setActivePanel("list");
-      // Auto dismiss after 3 seconds for success message
+      // Auto dismiss after 2 seconds for success message
       setTimeout(() => {
         setSuccessCreatedMsg("");
-      }, 3000);
+      }, 2000);
     } catch (err: any) {
       console.error("Initialization error:", err);
       setCreateError("Initialization error: " + err.message);
@@ -558,6 +551,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       await setDoc(doc(db, "settings", "security"), updateData, { merge: true });
 
       setGlobalSettingsSuccess("Super Admin security credentials updated successfully!");
+      setTimeout(() => {
+        setGlobalSettingsSuccess("");
+      }, 2000);
       if (targetId) {
         setGlobalAdminId(targetId);
         setNewGlobalAdminId("");
@@ -568,6 +564,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       }
     } catch (err: any) {
       setGlobalSettingsError("Configuration save error: " + err.message);
+      setTimeout(() => {
+        setGlobalSettingsError("");
+      }, 2000);
     } finally {
       setIsUpdatingGlobalSettings(false);
     }
@@ -740,85 +739,114 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         <AnimatePresence mode="wait">
           {activePanel === "register" && (
             <motion.div
-              key="add-restaurant-form"
+              key="branches-create-container"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="rounded-3xl border border-zinc-900 bg-zinc-950 p-8 max-w-2xl mx-auto space-y-8 shadow-2xl"
+              className="space-y-6 w-full max-w-xl mx-auto"
             >
-              <div className="space-y-2 border-b border-zinc-900/60 pb-4">
-                <h3 className="font-serif italic text-3xl font-bold text-white tracking-tight">Create Restaurants</h3>
-                <p className="text-zinc-500 text-sm font-sans">Initialize a brand new business branch with its unique credentials</p>
+              <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-6 space-y-6 shadow-2xl">
+                <div className="space-y-1">
+                  <h3 className="font-serif italic text-xl text-white">Create Restaurants</h3>
+                  <p className="text-zinc-500 text-xs font-sans">Initialize a brand new business branch with its unique credentials</p>
+                </div>
+
+                <form onSubmit={handleCreateRestaurant} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">company name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Downtown Foodcourt"
+                        value={newName}
+                        onChange={(e) => handleCompanyNameChange(e.target.value)}
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-sans transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">username ID</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. foodcourt"
+                        value={newSlug}
+                        onChange={(e) => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-mono transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">password</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter local staff log-in password..."
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
+                    />
+                    <p className="text-[10px] text-zinc-500 font-sans mt-2">
+                      Used for the branch landing login. The slug URL will be: <code className="text-amber-500 font-mono bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-900 text-[10px]">/restaurant/{newSlug || "slug"}</code>
+                    </p>
+                  </div>
+
+                  {createError && (
+                    <p className="text-xs text-rose-455 font-sans bg-rose-500/10 border border-rose-900/60 px-3 py-2 rounded-lg">{createError}</p>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900/60">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateError("");
+                        setNewName("");
+                        setNewSlug("");
+                        setNewPassword("");
+                        setActivePanel("list");
+                      }}
+                      className="rounded-lg border border-zinc-900 hover:bg-zinc-900/40 px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isCreating}
+                      className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black px-6 py-2 text-xs font-bold uppercase tracking-wider transition-all shadow-md active:scale-95 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {isCreating ? "Creating..." : "Create"}
+                    </button>
+                  </div>
+                </form>
               </div>
 
-              <form onSubmit={handleCreateRestaurant} className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-2.5">
-                    <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">company name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Downtown Foodcourt"
-                      value={newName}
-                      onChange={(e) => handleCompanyNameChange(e.target.value)}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-sans shadow-inner transition-all"
-                    />
+              {/* Delete All Branches Action Box */}
+              {restaurants.length > 0 && (
+                <div className="rounded-2xl border border-rose-950/40 bg-rose-955/5 p-6 space-y-4 shadow-xl">
+                  <div className="space-y-1">
+                    <h4 className="font-sans text-xs font-bold text-rose-550 uppercase tracking-wider flex items-center gap-1.5">
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Danger Zone
+                    </h4>
+                    <p className="text-zinc-550 text-[10px] leading-normal font-sans">
+                      Permanently wipe all registered dining branch databases in a single action.
+                    </p>
                   </div>
-                  <div className="space-y-2.5">
-                    <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">username ID</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. foodcourt"
-                      value={newSlug}
-                      onChange={(e) => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 font-mono shadow-inner transition-all"
-                    />
-                  </div>
-                </div>
 
-                <div className="space-y-2.5">
-                  <label className="font-mono text-sm uppercase tracking-widest text-zinc-300 font-extrabold block">password</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter local staff log-in password..."
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-zinc-900/80 border border-zinc-800 rounded-2xl px-5 py-4 text-lg sm:text-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 shadow-inner transition-all"
-                  />
-                  <p className="text-sm text-zinc-550 font-sans mt-3 leading-relaxed">
-                    Used for the branch landing login. The slug URL will be: <code className="text-amber-500 font-mono font-bold bg-zinc-950 px-2.5 py-1 rounded border border-zinc-900">/restaurant/{newSlug || "slug"}</code>
-                  </p>
-                </div>
-
-                {createError && (
-                  <p className="text-sm text-rose-455 font-sans bg-rose-500/10 border border-rose-900/60 px-4 py-3.5 rounded-xl">{createError}</p>
-                )}
-
-                <div className="flex justify-end gap-4 pt-6 border-t border-zinc-900/60">
                   <button
-                    type="button"
                     onClick={() => {
-                      setCreateError("");
-                      setNewName("");
-                      setNewSlug("");
-                      setNewPassword("");
-                      setActivePanel("list");
+                      setWipingAllModalOpen(true);
+                      setAllDeleteConfirmationInput("");
                     }}
-                    className="rounded-2xl border border-zinc-800 hover:bg-zinc-900/40 px-6 py-4 text-sm font-black uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
+                    className="w-full rounded-lg bg-rose-950/20 hover:bg-rose-900/25 border border-rose-900/45 text-rose-500 px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                    id="delete-all-restaurants-btn"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isCreating}
-                    className="rounded-2xl bg-amber-500 hover:bg-amber-400 text-black px-9 py-4 text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-amber-500/10 active:scale-95 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    {isCreating ? "Creating Branch..." : "Create Branch"}
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete All Branches</span>
                   </button>
                 </div>
-              </form>
+              )}
             </motion.div>
           )}
 
@@ -921,23 +949,9 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                     placeholder="Search restaurants..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-900 rounded-xl pl-9 pr-4 py-2 text-xs text-zinc-100 placeholder:text-zinc-750 focus:outline-none focus:border-amber-500 transition-colors font-sans outline-none"
+                    className="w-full bg-zinc-950 border border-zinc-900 rounded-xl pl-9 pr-4 py-2 text-xs text-zinc-105 placeholder:text-zinc-750 focus:outline-none focus:border-amber-500 transition-colors font-sans outline-none"
                   />
                 </div>
-
-                {restaurants.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setWipingAllModalOpen(true);
-                      setAllDeleteConfirmationInput("");
-                    }}
-                    className="flex items-center gap-1.5 rounded-lg border border-rose-950 bg-rose-950/10 hover:bg-rose-900/30 text-rose-500 hover:text-rose-400 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow active:scale-95"
-                    id="delete-all-restaurants-btn"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Delete All Branches</span>
-                  </button>
-                )}
               </div>
 
               {isLoading ? (
