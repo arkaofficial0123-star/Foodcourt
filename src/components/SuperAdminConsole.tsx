@@ -991,7 +991,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                               </h3>
                               {restaurant.isStaffActive && (
                                 <span 
-                                  className="h-2 w-2 rounded-full bg-emerald-500" 
+                                  className="h-2 w-2 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20 shadow-[0_0_8px_#10b981] animate-pulse" 
                                   title="Staff Mode: ONLINE" 
                                 />
                               )}
