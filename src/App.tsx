@@ -370,26 +370,34 @@ export default function App() {
   // 1. GLOBAL SUPER ADMIN CONSOLE MATCH
   if (isSuperAdmin) {
     return (
-      <SuperAdminConsole 
-        allRestaurants={allRestaurants}
-        onBackToMain={() => {
-          setIsSuperAdmin(false);
-          setFormUserId("");
-          setFormPassword("");
-          window.history.pushState(null, "", "/");
-        }} 
-        onLaunchLocalBranch={(slug) => {
-          sessionStorage.setItem(`admin_role_${slug}`, "superadmin");
-          sessionStorage.setItem(`isAdminBypass_${slug}`, "true");
-          setRestaurantId(slug);
-          setIsAdmin(true);
-          setIsCustomerView(false);
-          setTableId(null);
-          setIsSuperAdmin(false);
-          setIsRestaurantDisabled(false); // Reset disabled state temporarily
-          window.history.pushState(null, "", `/restaurant/${slug}`);
-        }}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -15 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="min-h-screen bg-[#050505]"
+      >
+        <SuperAdminConsole 
+          allRestaurants={allRestaurants}
+          onBackToMain={() => {
+            setIsSuperAdmin(false);
+            setFormUserId("");
+            setFormPassword("");
+            window.history.pushState(null, "", "/");
+          }} 
+          onLaunchLocalBranch={(slug) => {
+            sessionStorage.setItem(`admin_role_${slug}`, "superadmin");
+            sessionStorage.setItem(`isAdminBypass_${slug}`, "true");
+            setRestaurantId(slug);
+            setIsAdmin(true);
+            setIsCustomerView(false);
+            setTableId(null);
+            setIsSuperAdmin(false);
+            setIsRestaurantDisabled(false); // Reset disabled state temporarily
+            window.history.pushState(null, "", `/restaurant/${slug}`);
+          }}
+        />
+      </motion.div>
     );
   }
 
@@ -518,7 +526,13 @@ export default function App() {
   // 3. BRAND STAFF CONSOLE / LOCAL OPERATOR VIEW (Default state when clicking a restaurant)
   if (isAdmin && !isCustomerView) {
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans">
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -15 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="min-h-screen bg-neutral-950 text-neutral-100 font-sans"
+      >
         <AdminConsole
           items={menuItems}
           orders={orders}
@@ -542,23 +556,37 @@ export default function App() {
             window.history.pushState(null, "", "/superadmin");
           } : undefined}
         />
-      </div>
+      </motion.div>
     );
   }
 
   // 4. USER TABLE SELECTOR VIEW
   if (!tableId) {
     return (
-      <TableSelector 
-        onSelectTable={handleSelectTableNum} 
-        restaurantName={restaurantName} 
-      />
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.4 }}
+        className="min-h-screen bg-[#050505]"
+      >
+        <TableSelector 
+          onSelectTable={handleSelectTableNum} 
+          restaurantName={restaurantName} 
+        />
+      </motion.div>
     );
   }
 
   // 5. USER SEATED MENU AND START ORDERING VIEW
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col"
+    >
       <ClientMenu
         tableId={tableId}
         items={menuItems}
@@ -569,6 +597,6 @@ export default function App() {
         restaurantId={restaurantId}
         restaurantName={restaurantName}
       />
-    </div>
+    </motion.div>
   );
 }

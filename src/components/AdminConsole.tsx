@@ -88,6 +88,7 @@ export default function AdminConsole({
   const [showConfirmWipeOrders, setShowConfirmWipeOrders] = useState(false);
   const [wipeItemsFeedback, setWipeItemsFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [wipeOrdersFeedback, setWipeOrdersFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isStaffActive, setIsStaffActive] = useState<boolean>(true);
 
   const handleWipeAllItems = async () => {
     setIsWipingItems(true);
@@ -195,11 +196,39 @@ export default function AdminConsole({
     if (!restaurantId) return;
     const unsub = onSnapshot(doc(db, "restaurants", restaurantId), (snap) => {
       if (snap.exists()) {
-        setCurrentStaffPassword(snap.data().password || "1234");
+        const d = snap.data();
+        setCurrentStaffPassword(d.password || "1234");
+        setIsStaffActive(d.isStaffActive === true);
       }
     });
     return unsub;
   }, [restaurantId]);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    const makeOnline = async () => {
+      try {
+        await setDoc(doc(db, "restaurants", restaurantId), {
+          isStaffActive: true
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to auto-set staff active:", err);
+      }
+    };
+    makeOnline();
+  }, [restaurantId]);
+
+  const toggleStaffStatus = async () => {
+    if (!restaurantId) return;
+    try {
+      const nextStatus = !isStaffActive;
+      await setDoc(doc(db, "restaurants", restaurantId), {
+        isStaffActive: nextStatus
+      }, { merge: true });
+    } catch (err) {
+      console.error("Failed to toggle staff status:", err);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -218,6 +247,13 @@ export default function AdminConsole({
 
   const handleSignOut = async () => {
     try {
+      if (restaurantId) {
+        // Toggle staff offline upon logging out
+        await setDoc(doc(db, "restaurants", restaurantId), {
+          isStaffActive: false
+        }, { merge: true });
+      }
+
       if (onBackToSuperAdmin && sessionStorage.getItem("superadmin_global_auth") === "true") {
         onBackToSuperAdmin();
         return;
@@ -697,9 +733,23 @@ export default function AdminConsole({
               <div className="w-10 h-10 bg-white flex items-center justify-center rounded-lg shadow-md shrink-0">
                 <span className="text-black font-black text-xl">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
               </div>
-              <div>
-                <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">{restaurantName} Staff Panel</h1>
-                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500">{restaurantName || "Foodcourt"} admin console</p>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">{restaurantName}</h1>
+                  <button
+                    onClick={toggleStaffStatus}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[8px] font-bold uppercase tracking-wider cursor-pointer transition-all duration-200 select-none ${
+                      isStaffActive
+                        ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/30 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                        : "bg-zinc-900/40 border-zinc-750 text-zinc-400 hover:bg-zinc-800/40"
+                    }`}
+                    title="Click to toggle working status"
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${isStaffActive ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"}`} />
+                    <span>{isStaffActive ? "Open" : "Closed"}</span>
+                  </button>
+                </div>
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500">Admin Console</p>
               </div>
             </div>
           </div>
@@ -758,10 +808,11 @@ export default function AdminConsole({
               }
               onBackToMenu();
             }}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-900 bg-emerald-950/20 px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0 shadow-md"
+            title="Go to Users Page"
+            className="flex h-8 w-8 sm:w-auto items-center justify-center gap-1.5 rounded-lg border border-emerald-950 bg-emerald-950/20 px-0 sm:px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0 shadow-md"
           >
             <Eye className="h-3.5 w-3.5" />
-            <span>Go to Users Page</span>
+            <span className="hidden sm:inline">Go to Users Page</span>
           </button>
           <button
             onClick={handleSignOut}
@@ -789,18 +840,18 @@ export default function AdminConsole({
               {/* Stat Boxes */}
               <div className="grid grid-cols-2 gap-4 md:grid-cols-4" id="stats-banner-list">
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Incoming Queue</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">PENDING</span>
                   <div className="mt-1 flex items-baseline gap-2">
                     <span className="font-mono text-2xl font-bold text-white">{stats.pendingCount}</span>
                     <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
                   </div>
                 </div>
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Active Prep</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">PROCESSING</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-zinc-200">{stats.acceptedCount}</p>
                 </div>
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Completed Orders</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">COMPLETED</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-zinc-200">{stats.completedCount}</p>
                 </div>
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
@@ -818,7 +869,7 @@ export default function AdminConsole({
                     orderFilter === "pending" ? "text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  Pending ({stats.pendingCount})
+                  PENDING ({stats.pendingCount})
                   {orderFilter === "pending" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-200" />}
                 </button>
                 <button
@@ -828,7 +879,7 @@ export default function AdminConsole({
                     orderFilter === "accepted" ? "text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  Processing ({stats.acceptedCount})
+                  PROCESSING ({stats.acceptedCount})
                   {orderFilter === "accepted" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-200" />}
                 </button>
                 <button
@@ -838,7 +889,7 @@ export default function AdminConsole({
                     orderFilter === "completed" ? "text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  Completed ({stats.completedCount})
+                  COMPLETED ({stats.completedCount})
                   {orderFilter === "completed" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-200" />}
                 </button>
               </div>

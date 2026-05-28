@@ -47,6 +47,7 @@ interface RestaurantTenant {
   password: string;
   createdAt: string;
   isEnabled?: boolean;
+  isStaffActive?: boolean;
 }
 
 interface SuperAdminConsoleProps {
@@ -73,7 +74,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         name: r.name || "",
         password: r.password || "1234",
         createdAt: r.createdAt || new Date().toISOString(),
-        isEnabled: r.isEnabled !== false
+        isEnabled: r.isEnabled !== false,
+        isStaffActive: r.isStaffActive === true
       })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
     return [];
@@ -200,7 +202,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
           name: d.name || "",
           password: d.password || "1234",
           createdAt: d.createdAt || new Date().toISOString(),
-          isEnabled: d.isEnabled !== false
+          isEnabled: d.isEnabled !== false,
+          isStaffActive: d.isStaffActive === true
         });
       });
       setRestaurants(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
@@ -662,7 +665,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
               <Shield className="h-5 w-5 text-black" />
             </div>
             <div>
-              <h1 className="text-sm font-bold tracking-tight uppercase text-amber-500">SUPER ADMIN DASHBOARD</h1>
+              <h1 className="text-sm font-bold tracking-tight uppercase text-amber-500">ADMIN</h1>
             </div>
           </div>
         </div>
@@ -982,14 +985,16 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                           onClick={() => setExpandedRestaurantId(isExpanded ? null : restaurant.id)}
                         >
                           <div className="space-y-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2.5">
                               <h3 className="font-serif italic text-lg text-neutral-100 group-hover:text-amber-400 transition-colors">
                                 {restaurant.name}
                               </h3>
-                              <span 
-                                className={`h-2 w-2 rounded-full ${restaurant.isEnabled ? "bg-emerald-500" : "bg-rose-500"}`} 
-                                title={restaurant.isEnabled ? "Access Control: Active" : "Access Control: Suspended"} 
-                              />
+                              {restaurant.isStaffActive && (
+                                <span 
+                                  className="h-2 w-2 rounded-full bg-emerald-405 ring-4 ring-emerald-550/25 shadow-[0_0_8px_#10b981] animate-pulse" 
+                                  title="Staff Mode: ONLINE" 
+                                />
+                              )}
                             </div>
                             <p className="text-[11px] text-zinc-500 font-mono">
                               Registered {new Date(restaurant.createdAt).toLocaleDateString()}

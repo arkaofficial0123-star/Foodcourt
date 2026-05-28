@@ -285,12 +285,27 @@ export default function ClientMenu({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4" id="dishes-grid">
+          <motion.div 
+            variants={{
+              hidden: { opacity: 0 },
+              visible: { opacity: 1, transition: { staggerChildren: 0.04 } }
+            }}
+            initial="hidden"
+            animate="visible"
+            layout
+            className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4" 
+            id="dishes-grid"
+          >
             {filteredItems.map((item) => (
-              <div 
+              <motion.div 
                 key={item.id} 
                 id={`menu-item-card-${item.id}`}
-                className="bg-zinc-900/40 border border-zinc-800/40 rounded-2xl p-3 sm:p-4 flex flex-col group transition-all duration-300 hover:border-zinc-700/60"
+                variants={{
+                  hidden: { opacity: 0, y: 20, scale: 0.95 },
+                  visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 260, damping: 20 } }
+                }}
+                whileHover={{ y: -6, transition: { duration: 0.2 } }}
+                className="bg-zinc-900/40 border border-zinc-800/40 rounded-2xl p-3 sm:p-4 flex flex-col group transition-all duration-300 hover:border-zinc-700/60 shadow-lg"
               >
                 {/* Photo frame */}
                 <div className="aspect-square w-full bg-zinc-800/50 rounded-xl mb-3 sm:mb-4 overflow-hidden relative">
@@ -319,18 +334,19 @@ export default function ClientMenu({
                     </span>
                   </div>
                   
-                  <button
+                  <motion.button
                     onClick={() => handleAddToCart(item)}
                     id={`add-to-cart-${item.id}`}
-                    className="mt-auto w-full py-2.5 sm:py-3 bg-zinc-800 cursor-pointer hover:bg-zinc-700 text-white rounded-xl font-bold text-center transition-all duration-200 active:scale-95 flex items-center justify-center gap-1 text-xs sm:text-sm tracking-wide"
+                    whileTap={{ scale: 0.95 }}
+                    className="mt-auto w-full py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold text-center transition-colors cursor-pointer flex items-center justify-center gap-1 text-xs sm:text-sm tracking-wide"
                   >
                     <Plus className="h-4 w-4 shrink-0" />
                     <span>Add Plate</span>
-                  </button>
+                  </motion.button>
                 </div>
-              </div>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         )}
       </main>
 
