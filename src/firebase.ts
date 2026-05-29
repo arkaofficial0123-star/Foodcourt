@@ -3,25 +3,13 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import platformConfig from "../firebase-applet-config.json";
 
-// Detect if running locally / in-studio preview or on real deployed hostname
-const isLocal = typeof window !== "undefined" && (
-  window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1" ||
-  window.location.hostname.includes("ais-dev-") ||
-  window.location.hostname.includes("ais-pre-")
-);
-
-const resolvedDatabaseId = isLocal
-  ? "ai-studio-315e30b7-e747-4788-8106-19c507058c15"
-  : "Foodcourt-DATABASE";
-
 // Default public client configuration fallback for zero-configuration deployments (e.g. Vercel)
 const DEFAULT_FIREBASE_CONFIG = {
   projectId: "trusty-aegis-vtgzl",
   appId: "1:448117199497:web:f9551cb6bed0e57a1bec58",
   apiKey: "AIzaSyAD8OUjE_dHiQSIDWsnTwMvD-pQvDRNSDw",
   authDomain: "trusty-aegis-vtgzl.firebaseapp.com",
-  firestoreDatabaseId: resolvedDatabaseId,
+  firestoreDatabaseId: "ai-studio-315e30b7-e747-4788-8106-19c507058c15",
   storageBucket: "trusty-aegis-vtgzl.firebasestorage.app",
   messagingSenderId: "448117199497"
 };
@@ -37,7 +25,7 @@ const firebaseConfig = {
   storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || platformConfig.storageBucket || DEFAULT_FIREBASE_CONFIG.storageBucket,
   messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || platformConfig.messagingSenderId || DEFAULT_FIREBASE_CONFIG.messagingSenderId,
   appId: metaEnv.VITE_FIREBASE_APP_ID || platformConfig.appId || DEFAULT_FIREBASE_CONFIG.appId,
-  firestoreDatabaseId: metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || resolvedDatabaseId,
+  firestoreDatabaseId: metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || platformConfig.firestoreDatabaseId || DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId,
 };
 
 const app = initializeApp(firebaseConfig);
