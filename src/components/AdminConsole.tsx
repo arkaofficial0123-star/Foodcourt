@@ -206,29 +206,30 @@ export default function AdminConsole({
 
   useEffect(() => {
     if (!restaurantId) return;
-    const makeOnline = async () => {
+    const setOnlineState = async (online: boolean) => {
       try {
         await setDoc(doc(db, "restaurants", restaurantId), {
-          isStaffActive: true
+          isStaffActive: online
         }, { merge: true });
       } catch (err) {
-        console.error("Failed to auto-set staff active:", err);
+        console.error("Failed to update staff active state:", err);
       }
     };
-    makeOnline();
-  }, [restaurantId]);
+    setOnlineState(true);
 
-  const toggleStaffStatus = async () => {
-    if (!restaurantId) return;
-    try {
-      const nextStatus = !isStaffActive;
-      await setDoc(doc(db, "restaurants", restaurantId), {
-        isStaffActive: nextStatus
-      }, { merge: true });
-    } catch (err) {
-      console.error("Failed to toggle staff status:", err);
-    }
-  };
+    const handleBeforeUnload = () => {
+      setOnlineState(false);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("unload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("unload", handleBeforeUnload);
+      setOnlineState(false);
+    };
+  }, [restaurantId]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -734,21 +735,7 @@ export default function AdminConsole({
                 <span className="text-black font-black text-xl">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
               </div>
               <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">{restaurantName}</h1>
-                  <button
-                    onClick={toggleStaffStatus}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[8px] font-bold uppercase tracking-wider cursor-pointer transition-all duration-200 select-none ${
-                      isStaffActive
-                        ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/30 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
-                        : "bg-zinc-900/40 border-zinc-750 text-zinc-400 hover:bg-zinc-800/40"
-                    }`}
-                    title="Click to toggle working status"
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${isStaffActive ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"}`} />
-                    <span>{isStaffActive ? "Open" : "Closed"}</span>
-                  </button>
-                </div>
+                <h1 className="text-sm font-bold tracking-tight uppercase text-zinc-100">{restaurantName}</h1>
                 <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500">Admin Console</p>
               </div>
             </div>
