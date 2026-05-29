@@ -11,7 +11,7 @@ import TableSelector from "./components/TableSelector";
 import ClientMenu from "./components/ClientMenu";
 import AdminConsole from "./components/AdminConsole";
 import SuperAdminConsole from "./components/SuperAdminConsole";
-import { Loader, Store, Shield, ArrowRight } from "lucide-react";
+import { Loader, Store, Shield, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
 
 export default function App() {
@@ -42,6 +42,7 @@ export default function App() {
   const [selectedSlug, setSelectedSlug] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginSuccess, setLoginSuccess] = useState("");
+  const [showFormUserId, setShowFormUserId] = useState(false);
 
   // Synchronously listen to dynamic super admin gatekeeper credentials
   useEffect(() => {
@@ -456,14 +457,24 @@ export default function App() {
               {/* ID IDENTITY INPUT */}
               <div className="space-y-1 text-left">
                 <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 block">ID Identity</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="ID Identity"
-                  value={formUserId}
-                  onChange={(e) => setFormUserId(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-900 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-indigo-650"
-                />
+                <div className="relative">
+                  <input
+                    type={showFormUserId ? "text" : "password"}
+                    required
+                    placeholder="ID Identity"
+                    value={formUserId}
+                    onChange={(e) => setFormUserId(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-900 rounded-xl pl-4 pr-12 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-indigo-650"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowFormUserId(!showFormUserId)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+                    title={showFormUserId ? "Hide ID" : "Show ID"}
+                  >
+                    {showFormUserId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               {/* PASSWORD INPUT */}
