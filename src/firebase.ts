@@ -18,6 +18,22 @@ const DEFAULT_FIREBASE_CONFIG = {
 // and gracefully fall back to the workspace configuration.
 const metaEnv = (import.meta as any).env || {};
 
+// Dynamically check if we are running in the AI Studio development/preview system
+const isDevEnvironment = typeof window !== "undefined" && (
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname.startsWith("ais-dev-") ||
+  window.location.hostname.startsWith("ais-pre-")
+);
+
+// Determine the database ID:
+// - In development/preview: Use custom database ID from config or platform.
+// - In production/deployed: Use custom database ID if provided, otherwise default to "(default)"
+const devDatabaseId = metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || platformConfig.firestoreDatabaseId || DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId;
+const prodDatabaseId = metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || "(default)";
+
+const activeDatabaseId = isDevEnvironment ? devDatabaseId : prodDatabaseId;
+
 const firebaseConfig = {
   apiKey: metaEnv.VITE_FIREBASE_API_KEY || platformConfig.apiKey || DEFAULT_FIREBASE_CONFIG.apiKey,
   authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || platformConfig.authDomain || DEFAULT_FIREBASE_CONFIG.authDomain,
@@ -25,7 +41,7 @@ const firebaseConfig = {
   storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || platformConfig.storageBucket || DEFAULT_FIREBASE_CONFIG.storageBucket,
   messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || platformConfig.messagingSenderId || DEFAULT_FIREBASE_CONFIG.messagingSenderId,
   appId: metaEnv.VITE_FIREBASE_APP_ID || platformConfig.appId || DEFAULT_FIREBASE_CONFIG.appId,
-  firestoreDatabaseId: metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || platformConfig.firestoreDatabaseId || DEFAULT_FIREBASE_CONFIG.firestoreDatabaseId,
+  firestoreDatabaseId: activeDatabaseId,
 };
 
 const app = initializeApp(firebaseConfig);
