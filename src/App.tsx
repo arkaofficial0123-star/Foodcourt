@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { MenuItem, Order, BannerSettings } from "./types";
+import { MenuItem, Order, BannerSettings, Category } from "./types";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
 import TableSelector from "./components/TableSelector";
@@ -29,6 +29,8 @@ export default function App() {
 
   // Dynamic tenant-isolated data state
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryEnabled, setCategoryEnabled] = useState<boolean>(true);
   const [orders, setOrders] = useState<Order[]>([]);
   const [bannerSettings, setBannerSettings] = useState<BannerSettings | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -180,6 +182,7 @@ export default function App() {
       if (snap.exists()) {
         const d = snap.data();
         setRestaurantName(d.name || "Local Branch");
+        setCategoryEnabled(d.categoryEnabled !== false);
         if (d.isEnabled === false) {
           setIsRestaurantDisabled(true);
           sessionStorage.removeItem(`admin_role_${restaurantId}`);
@@ -206,6 +209,7 @@ export default function App() {
             price: d.price,
             imageUrl: d.imageUrl,
             createdAt: d.createdAt,
+            categoryId: d.categoryId,
           });
         }
       });
@@ -213,6 +217,24 @@ export default function App() {
       setIsDataLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, itemsPath);
+    });
+
+    // Populate and listen to categories
+    const categoriesPath = `restaurants/${restaurantId}/categories`;
+    const unsubCategories = onSnapshot(collection(db, "restaurants", restaurantId, "categories"), (snapshot) => {
+      const fetched: Category[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        fetched.push({
+          id: docSnap.id,
+          name: d.name,
+          imageUrl: d.imageUrl,
+          createdAt: d.createdAt,
+        });
+      });
+      setCategories(fetched.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, categoriesPath);
     });
 
     // Populate and listen to active orders list
@@ -258,6 +280,7 @@ export default function App() {
     return () => {
       unsubRest();
       unsubItems();
+      unsubCategories();
       unsubOrders();
       unsubBanner();
     };
@@ -352,6 +375,7 @@ export default function App() {
     if (state) {
       window.history.pushState(null, "", `/restaurant/${restaurantId}`);
     } else {
+      setTableId(null);
       window.history.pushState(null, "", `/restaurant/${restaurantId}/menu`);
     }
   };
@@ -546,6 +570,8 @@ export default function App() {
       >
         <AdminConsole
           items={menuItems}
+          categories={categories}
+          categoryEnabled={categoryEnabled}
           orders={orders}
           bannerSettings={bannerSettings}
           onBackToMenu={() => handleToggleAdminMode(false)}
@@ -601,6 +627,8 @@ export default function App() {
       <ClientMenu
         tableId={tableId}
         items={menuItems}
+        categories={categories}
+        categoryEnabled={categoryEnabled}
         orders={orders}
         bannerSettings={bannerSettings}
         onBackToTableSelect={handleLeaveTable}

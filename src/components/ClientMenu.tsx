@@ -3,16 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo } from "react";
-import { MenuItem, OrderItem, BannerSettings, Order } from "../types";
+import { useState, useMemo, useEffect } from "react";
+import { MenuItem, OrderItem, BannerSettings, Order, Category } from "../types";
 import { 
   Search, Plus, Minus, ShoppingCart, 
-  Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock
+  Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
 import Banner from "./Banner";
+
+export const formatPrice = (price: number | string): string => {
+  const p = Number(price);
+  if (isNaN(p)) return "0";
+  return p % 1 === 0 ? p.toString() : p.toFixed(2);
+};
 
 const formatItemName = (name: string): string => {
   if (!name) return "";
@@ -28,6 +34,8 @@ const formatItemName = (name: string): string => {
 interface ClientMenuProps {
   tableId: string;
   items: MenuItem[];
+  categories?: Category[];
+  categoryEnabled?: boolean;
   orders: Order[];
   bannerSettings: BannerSettings | null;
   onBackToTableSelect: () => void;
@@ -39,6 +47,8 @@ interface ClientMenuProps {
 export default function ClientMenu({ 
   tableId, 
   items, 
+  categories = [],
+  categoryEnabled = true,
   orders,
   bannerSettings,
   onBackToTableSelect,
@@ -70,12 +80,16 @@ export default function ClientMenu({
     setLastClickTime(now);
   };
 
-  // Filter items in real time based on search query
-  const filteredItems = useMemo(() => {
-    return items.filter((item) =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [items, searchQuery]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+
+  // Scroll active category pill smoothly into center of container when selection changes
+  useEffect(() => {
+    if (!categoryEnabled || !selectedCategoryId) return;
+    const pillElement = document.getElementById(`cat-pill-${selectedCategoryId}`);
+    if (pillElement) {
+      pillElement.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+  }, [selectedCategoryId, categoryEnabled]);
 
   // Active/recent orders related to this table to show live tracking info (hides once they are completed)
   const myActiveOrders = useMemo(() => {
@@ -83,6 +97,40 @@ export default function ClientMenu({
       .filter((o) => o.tableId === tableId && o.status !== "completed")
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [orders, tableId]);
+
+  const totalActiveOrdersPrice = useMemo(() => {
+    return myActiveOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+  }, [myActiveOrders]);
+
+  // Filter items in real time based on search query and category, sorting ordered items first
+  const filteredItems = useMemo(() => {
+    const matched = items.filter((item) => {
+      // Filter out standard template items with price 19.99 or 9.99
+      const itemPriceVal = Number(item.price);
+      if (itemPriceVal === 19.99 || itemPriceVal === 9.99) return false;
+
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+      if (categoryEnabled && selectedCategoryId) {
+        if (selectedCategoryId === "others_fallback") {
+          return !item.categoryId;
+        }
+        return item.categoryId === selectedCategoryId;
+      }
+      return true;
+    });
+
+    const inCartSet = new Set(cart.map((ci) => ci.id));
+    const inActiveOrdersSet = new Set((myActiveOrders || []).flatMap((o) => (o.items || []).map((i) => i.id)));
+
+    return [...matched].sort((a, b) => {
+      const aOrdered = inCartSet.has(a.id) || inActiveOrdersSet.has(a.id);
+      const bOrdered = inCartSet.has(b.id) || inActiveOrdersSet.has(b.id);
+      if (aOrdered && !bOrdered) return -1;
+      if (!aOrdered && bOrdered) return 1;
+      return 0;
+    });
+  }, [items, searchQuery, selectedCategoryId, categoryEnabled, cart, myActiveOrders]);
 
   // Add item to persistent bottom cart sheet
   const handleAddToCart = (item: MenuItem) => {
@@ -172,19 +220,19 @@ export default function ClientMenu({
   return (
     <div className="min-h-screen bg-neutral-950 pb-36 text-neutral-100 flex flex-col" id="client-menu-view">
       {/* Dynamic Subheader/Table identifier */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-5 backdrop-blur-md">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-6 py-2 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div 
               onClick={handleLogoClick}
-              className="w-10 h-10 bg-white flex items-center justify-center rounded-lg shadow-md shrink-0 cursor-pointer active:scale-95 transition-transform select-none"
+              className="w-6.5 h-6.5 bg-white flex items-center justify-center rounded shadow-md shrink-0 cursor-pointer active:scale-95 transition-transform select-none"
               title={restaurantName}
             >
-              <span className="text-black font-black text-xl">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
+              <span className="text-black font-black text-sm">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
             </div>
             <div>
-              <h1 className="text-sm font-bold tracking-tight text-zinc-100">{restaurantName}</h1>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em]">Table {tableId}</p>
+              <h1 className="text-xs font-bold tracking-tight text-zinc-100">{restaurantName || "Restaurant"}</h1>
+              <p className="text-[9px] text-zinc-500 uppercase tracking-[0.2em]">Table {tableId}</p>
             </div>
           </div>
         </div>
@@ -196,9 +244,9 @@ export default function ClientMenu({
           <button
             onClick={onGoToAdmin}
             id="staff-console-gateway"
-            className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 hover:text-zinc-100 uppercase tracking-widest transition-all border border-zinc-800 px-3.5 py-1.5 rounded-full bg-zinc-950 cursor-pointer active:scale-95 animate-pulse"
+            className="flex items-center gap-1.5 font-mono text-[9px] text-zinc-400 hover:text-zinc-100 uppercase tracking-widest transition-all border border-zinc-800 px-2.5 py-1.5 rounded-full bg-zinc-950 cursor-pointer active:scale-95 animate-pulse"
           >
-            <QrCode className="h-4 w-4" />
+            <QrCode className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Staff Mode</span>
           </button>
         )}
@@ -210,9 +258,9 @@ export default function ClientMenu({
       {/* Menu / Items Workspace */}
       <main className="mx-auto w-full max-w-5xl px-8 flex-grow">
         {/* Real-time search */}
-        <div className="relative mb-4 mt-2">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-zinc-500">
-            <Search className="h-5 w-5" />
+        <div className="relative mb-3 mt-1">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-zinc-500">
+            <Search className="h-3.5 w-3.5" />
           </div>
           <input
             type="text"
@@ -220,23 +268,66 @@ export default function ClientMenu({
             placeholder="Search dishes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800/80 px-5 py-3.5 pl-12 rounded-full text-sm focus:outline-none focus:border-zinc-600 placeholder:text-zinc-500 text-zinc-100 transition-all outline-none"
+            className="w-full bg-zinc-900/80 border border-zinc-800 px-4 py-1.5 pl-9 rounded-full text-[11px] focus:outline-none focus:border-zinc-600 placeholder:text-zinc-500 text-zinc-100 transition-all outline-none"
           />
         </div>
 
+        {/* Dynamic sliding categories section under search bar */}
+        {categoryEnabled && (
+          <div className="mb-5 overflow-hidden" id="client-categories-slider">
+            <div 
+              className="flex gap-2 overflow-x-auto pb-2 scrollbar-none" 
+              style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+            >
+              {categories.map((cat) => {
+                const isActive = selectedCategoryId === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    id={`cat-pill-${cat.id}`}
+                    type="button"
+                    onClick={() => {
+                      if (isActive) {
+                        setSelectedCategoryId(null);
+                      } else {
+                        setSelectedCategoryId(cat.id);
+                      }
+                    }}
+                    className={`flex items-center gap-2 pl-2 pr-3.5 py-1 rounded-full border text-[10px] font-sans font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 scroll-align-center ${
+                      isActive
+                        ? "bg-white text-black border-white shadow-lg font-extrabold"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-300 hover:border-zinc-700"
+                    }`}
+                  >
+                    <img
+                      src={cat.imageUrl}
+                      alt={cat.name}
+                      referrerPolicy="no-referrer"
+                      className="h-4.5 w-4.5 rounded-full object-cover bg-neutral-950 border border-zinc-800/10 shrink-0"
+                    />
+                    <span>{cat.name}</span>
+                  </button>
+                );
+              })}
+
+
+            </div>
+          </div>
+        )}
+
         {/* Real-time active orders status display section */}
         {myActiveOrders.length > 0 && (
-          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-900/15 p-4 space-y-3" id="active-orders-tracker">
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+          <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/15 p-2 px-3.5 space-y-1.5" id="active-orders-tracker">
+            <div className="flex items-center justify-between border-b border-zinc-900/60 pb-1.5">
               <div className="flex items-center gap-2">
                 <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <h3 className="font-sans text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                   Your Order Status ({myActiveOrders.length})
                 </h3>
               </div>
-              <p className="font-mono text-[9px] text-zinc-600">Real-time update</p>
+              <p className="font-mono text-[10px] text-zinc-400 font-bold bg-zinc-900 border border-zinc-800/80 px-2.5 py-0.5 rounded-full">total ₹{formatPrice(totalActiveOrdersPrice)}</p>
             </div>
-            <div className="divide-y divide-zinc-900/40 overflow-hidden max-h-36 overflow-y-auto pr-1">
+            <div className="divide-y divide-zinc-900/20 overflow-hidden max-h-24 overflow-y-auto pr-1">
               {myActiveOrders.map((order) => {
                 const displayStatus = order.status === "pending" 
                   ? "Pending" 
@@ -251,7 +342,7 @@ export default function ClientMenu({
                   : "text-emerald-400 bg-emerald-950/10 border-emerald-900/40";
 
                 return (
-                  <div key={order.id} className="py-2 flex items-center justify-between text-xs" id={`order-track-${order.id}`}>
+                  <div key={order.id} className="py-1 flex items-center justify-between text-xs" id={`order-track-${order.id}`}>
                     <div className="flex items-center gap-2.5">
                       <span className="font-mono text-[10px] text-zinc-400 font-semibold bg-zinc-900/60 border border-zinc-805 px-1.5 py-0.5 rounded">
                         #{order.id.slice(-5).toUpperCase()}
@@ -262,7 +353,7 @@ export default function ClientMenu({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-mono text-[10px] text-zinc-400">
-                        ₹{order.total.toFixed(2)}
+                        ₹{formatPrice(order.total)}
                       </span>
                       <span className={`px-2 py-0.5 font-sans font-bold text-[9px] uppercase tracking-wider rounded border ${statusColor}`}>
                         {displayStatus}
@@ -330,7 +421,7 @@ export default function ClientMenu({
                       {formatItemName(item.name)}
                     </h3>
                     <span className="text-zinc-400 font-mono text-xs sm:text-sm shrink-0">
-                      ₹{item.price.toFixed(2)}
+                      ₹{formatPrice(item.price)}
                     </span>
                   </div>
                   
@@ -357,24 +448,27 @@ export default function ClientMenu({
             initial={{ y: 200, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 200, opacity: 0 }}
-            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-[36px] py-6 px-10 shadow-[0_-15px_40px_rgba(0,0,0,0.4)] text-zinc-950 border-t border-zinc-100"
+            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-[36px] py-6 px-10 shadow-[0_-15px_40px_rgba(0,0,0,0.4)] text-zinc-950 border-t border-zinc-100 relative"
             id="persistent-order-bar"
           >
+            {/* Top-right X button as a back / close selection button */}
+            <button
+              onClick={() => setCart([])}
+              id="clear-cart-btn"
+              className="absolute top-6 right-8 p-1.5 rounded-full text-zinc-400 hover:text-zinc-950 hover:bg-zinc-100 transition-all cursor-pointer border border-zinc-200"
+              title="Back"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
             <div className="mx-auto max-w-3xl space-y-4">
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3 pr-8">
                 <div className="flex items-center gap-2">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-950 text-[10px] font-mono font-bold text-white">
                     {totalItemsCount}
                   </div>
                   <h4 className="font-sans text-xs font-bold uppercase tracking-widest text-zinc-800">Selected Plates</h4>
                 </div>
-                <button
-                  onClick={() => setCart([])}
-                  id="clear-cart-btn"
-                  className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 hover:text-zinc-950 transition-all cursor-pointer"
-                >
-                  Cancel selection
-                </button>
               </div>
 
               {/* Items scroll zone */}
@@ -383,7 +477,7 @@ export default function ClientMenu({
                   <div key={item.id} className="flex items-center justify-between text-sm py-1" id={`cart-item-${item.id}`}>
                     <span className="font-sans font-semibold text-zinc-800">{formatItemName(item.name)}</span>
                     <div className="flex items-center gap-4">
-                      <span className="font-mono font-medium text-zinc-500">₹{(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="font-mono font-medium text-zinc-500">₹{formatPrice(item.price * item.quantity)}</span>
                       <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 p-1">
                         <button
                           onClick={() => handleDecreaseQty(item.id)}
@@ -401,13 +495,6 @@ export default function ClientMenu({
                           <Plus className="h-3 w-3" />
                         </button>
                       </div>
-                      <button
-                        onClick={() => handleRemoveFromCart(item.id)}
-                        id={`cart-remove-${item.id}`}
-                        className="text-zinc-300 hover:text-rose-600 transition-colors p-1"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -417,7 +504,7 @@ export default function ClientMenu({
               <div className="flex flex-col gap-4 pt-2 md:flex-row md:items-center md:justify-between md:gap-8 border-t border-zinc-50">
                 <div className="flex justify-between md:flex-col md:justify-center">
                   <span className="font-sans text-[10px] uppercase tracking-[0.15em] text-zinc-400 font-medium">Chef's Total Sum</span>
-                  <span className="font-sans text-2xl font-extrabold tracking-tight text-zinc-950">₹{cartTotal.toFixed(2)}</span>
+                  <span className="font-sans text-2xl font-extrabold tracking-tight text-zinc-950">₹{formatPrice(cartTotal)}</span>
                 </div>
 
                 <button
@@ -468,7 +555,7 @@ export default function ClientMenu({
               <div className="border-t border-neutral-900 pt-4 space-y-2">
                 <div className="flex justify-between font-mono text-xs text-neutral-400">
                   <span>Charge Sum:</span>
-                  <span className="text-neutral-200">₹{placedOrder.total.toFixed(2)}</span>
+                  <span className="text-neutral-200">₹{formatPrice(placedOrder.total)}</span>
                 </div>
                 <div className="flex justify-between font-mono text-xs text-neutral-400">
                   <span>Sat Location:</span>

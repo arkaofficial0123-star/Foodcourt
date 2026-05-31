@@ -45,12 +45,40 @@
           "type": "string",
           "description": "Image URL or Base64 representation of the dish"
         },
+        "categoryId": {
+          "type": "string",
+          "description": "Optional identifier of the category"
+        },
         "createdAt": {
           "type": "string",
           "description": "ISO structure or Firebase timestamp indicating when item was added"
         }
       },
       "required": ["name", "price", "imageUrl", "createdAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A food category",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the category"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the category"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Image URL of the category"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp indicating when category was added"
+        }
+      },
+      "required": ["name", "imageUrl", "createdAt"]
     },
     "Order": {
       "title": "Order",
@@ -130,6 +158,10 @@
     "/restaurants/{restaurantId}/settings/banner": {
       "schema": "Banner",
       "description": "Tenant specific banner configuration"
+    },
+    "/restaurants/{restaurantId}/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Tenant specific categories"
     }
   }
 }

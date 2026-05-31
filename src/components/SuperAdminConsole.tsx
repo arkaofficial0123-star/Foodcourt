@@ -245,7 +245,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
             setDoc(fcRef, payload),
             setDoc(initialItemRef, {
               name: "Welcome Gourmet Platter",
-              price: 9.50,
+              price: 150,
               imageUrl: "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&q=80&w=600",
               createdAt: new Date().toISOString()
             }),
@@ -315,7 +315,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         setDoc(restRef, payload),
         setDoc(initialItemRef, {
           name: "Welcome Gourmet Platter",
-          price: 9.50,
+          price: 150,
           imageUrl: "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&q=80&w=600",
           createdAt: new Date().toISOString()
         }),

@@ -9,6 +9,14 @@ export interface MenuItem {
   price: number;
   imageUrl: string;
   createdAt: string;
+  categoryId?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  imageUrl: string;
+  createdAt: string;
 }
 
 export interface OrderItem {
