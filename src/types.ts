@@ -9,13 +9,13 @@ export interface MenuItem {
   price: number;
   imageUrl: string;
   createdAt: string;
-  categoryId?: string;
+  category?: string;
 }
 
 export interface Category {
   id: string;
   name: string;
-  imageUrl: string;
+  imageUrl?: string;
   createdAt: string;
 }
 
@@ -41,5 +41,6 @@ export interface BannerSettings {
   imageUrl: string;
   visible: boolean;
   bioVisible?: boolean;
+  categoriesEnabled?: boolean;
   updatedAt: string;
 }

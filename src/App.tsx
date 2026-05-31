@@ -30,7 +30,6 @@ export default function App() {
   // Dynamic tenant-isolated data state
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryEnabled, setCategoryEnabled] = useState<boolean>(true);
   const [orders, setOrders] = useState<Order[]>([]);
   const [bannerSettings, setBannerSettings] = useState<BannerSettings | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -182,7 +181,6 @@ export default function App() {
       if (snap.exists()) {
         const d = snap.data();
         setRestaurantName(d.name || "Local Branch");
-        setCategoryEnabled(d.categoryEnabled !== false);
         if (d.isEnabled === false) {
           setIsRestaurantDisabled(true);
           sessionStorage.removeItem(`admin_role_${restaurantId}`);
@@ -206,14 +204,14 @@ export default function App() {
           fetched.push({
             id: docSnap.id,
             name: d.name,
-            price: d.price,
+            price: typeof d.price === "number" ? d.price : (parseFloat(d.price) || 0),
             imageUrl: d.imageUrl,
             createdAt: d.createdAt,
-            categoryId: d.categoryId,
+            category: d.category || "",
           });
         }
       });
-      setMenuItems(fetched.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+      setMenuItems(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setIsDataLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, itemsPath);
@@ -221,21 +219,19 @@ export default function App() {
 
     // Populate and listen to categories
     const categoriesPath = `restaurants/${restaurantId}/categories`;
-    const unsubCategories = onSnapshot(collection(db, "restaurants", restaurantId, "categories"), (snapshot) => {
+    const unsubCategories = onSnapshot(collection(db, "restaurants", restaurantId, "categories"), (snap) => {
       const fetched: Category[] = [];
-      snapshot.forEach((docSnap) => {
+      snap.forEach((docSnap) => {
         const d = docSnap.data();
         fetched.push({
           id: docSnap.id,
           name: d.name,
-          imageUrl: d.imageUrl,
+          imageUrl: d.imageUrl || "",
           createdAt: d.createdAt,
         });
       });
-      setCategories(fetched.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, categoriesPath);
-    });
+      setCategories(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    }, () => {});
 
     // Populate and listen to active orders list
     const ordersPath = `restaurants/${restaurantId}/orders`;
@@ -246,8 +242,13 @@ export default function App() {
         fetched.push({
           id: docSnap.id,
           tableId: d.tableId,
-          items: d.items,
-          total: d.total,
+          items: (d.items || []).map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            price: typeof item.price === "number" ? item.price : (parseFloat(item.price) || 0),
+            quantity: item.quantity
+          })),
+          total: typeof d.total === "number" ? d.total : (parseFloat(d.total) || 0),
           status: d.status,
           createdAt: d.createdAt,
           updatedAt: d.updatedAt,
@@ -268,6 +269,7 @@ export default function App() {
           imageUrl: d.imageUrl,
           visible: d.visible,
           bioVisible: d.bioVisible,
+          categoriesEnabled: d.categoriesEnabled ?? true,
           updatedAt: d.updatedAt,
         });
       } else {
@@ -571,7 +573,6 @@ export default function App() {
         <AdminConsole
           items={menuItems}
           categories={categories}
-          categoryEnabled={categoryEnabled}
           orders={orders}
           bannerSettings={bannerSettings}
           onBackToMenu={() => handleToggleAdminMode(false)}
@@ -628,7 +629,6 @@ export default function App() {
         tableId={tableId}
         items={menuItems}
         categories={categories}
-        categoryEnabled={categoryEnabled}
         orders={orders}
         bannerSettings={bannerSettings}
         onBackToTableSelect={handleLeaveTable}

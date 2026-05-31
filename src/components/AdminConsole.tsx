@@ -8,9 +8,9 @@ import { MenuItem, Order, BannerSettings, Category } from "../types";
 import { 
   ArrowLeft, Bell, Settings, ClipboardList, 
   Plus, Edit2, Trash2, Eye, EyeOff, Upload, 
-  IndianRupee, CheckCircle2, ShoppingBag, EyeIcon,
+  IndianRupee, CheckCircle2, ShoppingBag, EyeIcon, Search,
   BarChart3, TrendingUp, LogOut, Users, Award, Clock,
-  ShieldCheck, AlertTriangle, Layers, ChevronLeft, ChevronRight, Sparkles, Search
+  ShieldCheck, AlertTriangle, PlusCircle, ChevronLeft, ImagePlus, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType, auth } from "../firebase";
@@ -20,7 +20,6 @@ import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signInAnonymou
 interface AdminConsoleProps {
   items: MenuItem[];
   categories: Category[];
-  categoryEnabled: boolean;
   orders: Order[];
   bannerSettings: BannerSettings | null;
   onBackToMenu: () => void;
@@ -41,10 +40,14 @@ const formatItemName = (name: string): string => {
     .join(" ");
 };
 
-const formatPrice = (price: number | string): string => {
-  const p = Number(price);
-  if (isNaN(p)) return "0";
-  return p % 1 === 0 ? p.toString() : p.toFixed(2);
+const formatMonthName = (monthStr: string): string => {
+  try {
+    const [year, month] = monthStr.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  } catch (e) {
+    return monthStr;
+  }
 };
 
 // Pre-defined elegant default backgrounds if user does not upload a file
@@ -58,7 +61,6 @@ const PRESET_IMAGES = [
 export default function AdminConsole({
   items,
   categories = [],
-  categoryEnabled = true,
   orders,
   bannerSettings,
   onBackToMenu,
@@ -93,14 +95,14 @@ export default function AdminConsole({
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isUpdatingSuperAdminPassword, setIsUpdatingSuperAdminPassword] = useState(false);
   const [isWipingItems, setIsWipingItems] = useState(false);
-  const [isWipingOrders, setIsWipingOrders] = useState(false);
   const [isWipingCategories, setIsWipingCategories] = useState(false);
+  const [isWipingOrders, setIsWipingOrders] = useState(false);
   const [showConfirmWipeItems, setShowConfirmWipeItems] = useState(false);
-  const [showConfirmWipeOrders, setShowConfirmWipeOrders] = useState(false);
   const [showConfirmWipeCategories, setShowConfirmWipeCategories] = useState(false);
+  const [showConfirmWipeOrders, setShowConfirmWipeOrders] = useState(false);
   const [wipeItemsFeedback, setWipeItemsFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [wipeOrdersFeedback, setWipeOrdersFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [wipeCategoriesFeedback, setWipeCategoriesFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [wipeOrdersFeedback, setWipeOrdersFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isStaffActive, setIsStaffActive] = useState<boolean>(true);
 
   const handleWipeAllItems = async () => {
@@ -158,35 +160,6 @@ export default function AdminConsole({
       }, 2000);
     } finally {
       setIsWipingOrders(false);
-    }
-  };
-
-  const handleWipeAllCategories = async () => {
-    setIsWipingCategories(true);
-    setWipeCategoriesFeedback(null);
-    try {
-      for (const cat of categories) {
-        const catDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "categories", cat.id);
-        await deleteDoc(catDocRef);
-      }
-      setWipeCategoriesFeedback({
-        type: "success",
-        text: "Success: All categories have been permanently deleted from the database."
-      });
-      setShowConfirmWipeCategories(false);
-      setTimeout(() => {
-        setWipeCategoriesFeedback(null);
-      }, 2000);
-    } catch (err: any) {
-      setWipeCategoriesFeedback({
-        type: "error",
-        text: "Error wiping categories: " + (err.message || String(err))
-      });
-      setTimeout(() => {
-        setWipeCategoriesFeedback(null);
-      }, 2000);
-    } finally {
-      setIsWipingCategories(false);
     }
   };
 
@@ -448,31 +421,23 @@ export default function AdminConsole({
   const [itemName, setItemName] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [itemImageUrl, setItemImageUrl] = useState("");
-  const [itemCategoryId, setItemCategoryId] = useState("");
   const [isSubmitItemLoading, setIsSubmitItemLoading] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
-  const [dishSearchQuery, setDishSearchQuery] = useState("");
 
-  // Category management & creation states
-  const [itemsSubTab, setItemsSubTab] = useState<"dishes" | "categories">("categories");
-  const [categoryName, setCategoryName] = useState("");
-  const [categoryImageUrl, setCategoryImageUrl] = useState("");
-  const [isSubmitCategoryLoading, setIsSubmitCategoryLoading] = useState(false);
+  // Dish inline editing states
+  const [editingDishId, setEditingDishId] = useState<string | null>(null);
+  const [editingDishName, setEditingDishName] = useState("");
+  const [editingDishPrice, setEditingDishPrice] = useState("");
+  const [adminItemsSearchQuery, setAdminItemsSearchQuery] = useState("");
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
 
-  // Advanced Category Seeding State
-  const [activeSeedingCategory, setActiveSeedingCategory] = useState<Category | null>(null);
-  const [stagedDishes, setStagedDishes] = useState<Array<{ id: string; name: string; price: string; imageUrl: string }>>([]);
-  const [isSeedingConfirmLoading, setIsSeedingConfirmLoading] = useState(false);
-  const [activeStagedIdx, setActiveStagedIdx] = useState(0);
-
-  // Reset utilities states
-  const [isResetItemsLoading, setIsResetItemsLoading] = useState(false);
-  const [isResetOrdersLoading, setIsResetOrdersLoading] = useState(false);
-  const [isResetCategoriesLoading, setIsResetCategoriesLoading] = useState(false);
-  const [showResetItemsConfirm, setShowResetItemsConfirm] = useState(false);
-  const [showResetOrdersConfirm, setShowResetOrdersConfirm] = useState(false);
-  const [showResetCategoriesConfirm, setShowResetCategoriesConfirm] = useState(false);
+  // Categories and batch upload states
+  const [selectedManageCategory, setSelectedManageCategory] = useState<Category | { id: string; name: string } | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryImageUrl, setNewCategoryImageUrl] = useState("");
+  const [isSubmitCategoryLoading, setIsSubmitCategoryLoading] = useState(false);
+  const [batchDishes, setBatchDishes] = useState<{ id: string; name: string; price: string; imageUrl: string }[]>([]);
+  const [categoriesEnabled, setCategoriesEnabled] = useState(bannerSettings?.categoriesEnabled ?? true);
 
   // Banner form state
   const [bannerText, setBannerText] = useState(bannerSettings?.text || "");
@@ -504,25 +469,6 @@ export default function AdminConsole({
       .filter(o => o.status === orderFilter)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [orders, orderFilter]);
-
-  // Sort items: newest added first (createdAt descending), filtered by searchable query
-  const sortedItems = useMemo(() => {
-    let filtered = [...items];
-    if (dishSearchQuery.trim()) {
-      const q = dishSearchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item => {
-        const matchesName = item.name.toLowerCase().includes(q);
-        const catName = categories.find(c => c.id === item.categoryId)?.name || "";
-        const matchesCat = catName.toLowerCase().includes(q);
-        return matchesName || matchesCat;
-      });
-    }
-    return filtered.sort((a, b) => {
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return bTime - aTime;
-    });
-  }, [items, dishSearchQuery, categories]);
 
   // Analytics calculations and trends analysis
   const analytics = useMemo(() => {
@@ -600,6 +546,24 @@ export default function AdminConsole({
       .map(([tableId, data]) => ({ tableId, ...data }))
       .sort((a, b) => b.total - a.total);
 
+    // Monthly history aggregation
+    const monthlyPerformance: { [month: string]: number } = {};
+    completedOrders.forEach(o => {
+      try {
+        const monthVal = o.createdAt.slice(0, 7); // YYYY-MM
+        if (monthVal) {
+          monthlyPerformance[monthVal] = (monthlyPerformance[monthVal] || 0) + o.total;
+        }
+      } catch (err) {}
+    });
+
+    const monthlyHistory = Object.entries(monthlyPerformance)
+      .map(([month, total]) => ({
+        month,
+        total
+      }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+
     return {
       ordersTodayCount: ordersToday.length,
       ordersThisMonthCount: ordersThisMonth.length,
@@ -609,7 +573,8 @@ export default function AdminConsole({
       avgOrderValue,
       bestSellers,
       hourlyOrders,
-      tablesRanked
+      tablesRanked,
+      monthlyHistory
     };
   }, [orders, items]);
 
@@ -667,15 +632,12 @@ export default function AdminConsole({
       : (cleanId || "dish_" + Math.random().toString(36).substring(2, 8));
     const timestamp = editingItem ? editingItem.createdAt : new Date().toISOString();
 
-    const itemPayload: any = {
+    const itemPayload = {
       name: formatItemName(itemName),
       price: priceNum,
       imageUrl: itemImageUrl || PRESET_IMAGES[0].value,
       createdAt: timestamp
     };
-    if (itemCategoryId) {
-      itemPayload.categoryId = itemCategoryId;
-    }
 
     try {
       const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
@@ -686,7 +648,6 @@ export default function AdminConsole({
       setItemName("");
       setItemPrice("");
       setItemImageUrl("");
-      setItemCategoryId("");
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `items/${itemId}`);
     } finally {
@@ -699,8 +660,6 @@ export default function AdminConsole({
     setItemName(item.name);
     setItemPrice(item.price.toString());
     setItemImageUrl(item.imageUrl);
-    setItemCategoryId(item.categoryId || "");
-    setItemsSubTab("dishes"); // Switch to dishes subTab so they can see the edit form
   };
 
   const handleDeleteItem = async (itemId: string) => {
@@ -713,202 +672,35 @@ export default function AdminConsole({
     }
   };
 
-  // Category Creation / Modification
-  const handleSaveCategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!categoryName.trim() || isSubmitCategoryLoading) return;
-
-    setIsSubmitCategoryLoading(true);
-
-    // Normalize category name for document ID
-    const cleanId = categoryName.trim().toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
-
-    const categoryId = cleanId || "cat_" + Math.random().toString(36).substring(2, 8);
-    const timestamp = new Date().toISOString();
-
-    const categoryPayload = {
-      name: categoryName.trim(),
-      imageUrl: categoryImageUrl || PRESET_IMAGES[1].value, // Fallback default backdrop preset
-      createdAt: timestamp
-    };
-
-    try {
-      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "categories", categoryId);
-      await setDoc(docRef, categoryPayload);
-      
-      setCategoryName("");
-      setCategoryImageUrl("");
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `categories/${categoryId}`);
-    } finally {
-      setIsSubmitCategoryLoading(false);
-    }
-  };
-
-  const handleDeleteCategory = async (catId: string) => {
-    try {
-      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "categories", catId);
-      await deleteDoc(docRef);
-      setDeletingCategoryId(null);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `categories/${catId}`);
-    }
-  };
-
-  // Multiple image category-dishes seeding handlers
-  const handleStartSeeding = (cat: Category) => {
-    setActiveSeedingCategory(cat);
-    setStagedDishes([]);
-    setActiveStagedIdx(0);
-  };
-
-  const handleBulkImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    Array.from(files).forEach((file: any) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setStagedDishes((prev) => [
-            ...prev,
-            {
-              id: "staged_" + Math.random().toString(36).substring(2, 8),
-              name: "",
-              price: "",
-              imageUrl: reader.result
-            }
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-    
-    // Reset to first newly uploaded if starting fresh
-    setActiveStagedIdx(0);
-    
-    // Clear input so users can reselect or reupload
-    e.target.value = "";
-  };
-
-  const updateStagedDish = (id: string, field: "name" | "price", value: string) => {
-    setStagedDishes((prev) =>
-      prev.map((dish) => (dish.id === id ? { ...dish, [field]: value } : dish))
-    );
-  };
-
-  const removeStagedDish = (id: string) => {
-    setStagedDishes((prev) => {
-      const filtered = prev.filter((dish) => dish.id !== id);
-      if (activeStagedIdx >= filtered.length) {
-        setActiveStagedIdx(Math.max(0, filtered.length - 1));
-      }
-      return filtered;
-    });
-  };
-
-  const handleConfirmSeeding = async () => {
-    if (stagedDishes.length === 0) return;
-
-    // Validate inputs
-    const incomplete = stagedDishes.some(
-      (dish) => !dish.name.trim() || !dish.price.toString().trim()
-    );
-    if (incomplete) {
-      alert("Please provide a Name and positive Price for all uploaded dishes before saving.");
+  const handleUpdateDishDetails = async (itemId: string) => {
+    const priceNum = parseFloat(editingDishPrice);
+    if (!editingDishName.trim() || isNaN(priceNum) || priceNum <= 0) {
+      alert("Please ensure you enter a valid name and positive numeric price.");
       return;
     }
-
-    setIsSeedingConfirmLoading(true);
     try {
-      for (const dish of stagedDishes) {
-        const priceNum = parseFloat(dish.price);
-        if (isNaN(priceNum) || priceNum <= 0) {
-          throw new Error(`Invalid price input for "${dish.name}"`);
-        }
-
-        const cleanId = dish.name.trim().toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_+|_+$/g, "");
-        const itemId = cleanId || "dish_" + Math.random().toString(36).substring(2, 8);
-        const timestamp = new Date().toISOString();
-
-        const itemPayload: any = {
-          name: formatItemName(dish.name),
-          price: priceNum,
-          imageUrl: dish.imageUrl,
-          createdAt: timestamp
-        };
-
-        if (activeSeedingCategory && activeSeedingCategory.id !== "others_fallback") {
-          itemPayload.categoryId = activeSeedingCategory.id;
-        }
-
-        const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
-        await setDoc(docRef, itemPayload);
-      }
-
-      alert(`Successfully added ${stagedDishes.length} dishes to "${activeSeedingCategory?.name}"!`);
-      setStagedDishes([]);
-      setActiveSeedingCategory(null);
-    } catch (err: any) {
-      console.error("Failed to seed items:", err);
-      alert("Error seeding dishes: " + (err.message || String(err)));
-    } finally {
-      setIsSeedingConfirmLoading(false);
-    }
-  };
-
-  // Safe database resets
-  const handleResetAddedItems = async () => {
-    setIsResetItemsLoading(true);
-    try {
-      const resId = restaurantId || "foodcourt";
-      const itemsCol = collection(db, "restaurants", resId, "items");
-      const snapshot = await getDocs(itemsCol);
-      const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      setShowResetItemsConfirm(false);
+      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
+      await setDoc(docRef, {
+        name: formatItemName(editingDishName),
+        price: priceNum
+      }, { merge: true });
+      setEditingDishId(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `items_reset`);
-    } finally {
-      setIsResetItemsLoading(false);
+      console.error("Failed to update dish details:", err);
+      alert("Failed to save dish details updates.");
     }
   };
 
-  const handleResetOrders = async () => {
-    setIsResetOrdersLoading(true);
-    try {
-      const resId = restaurantId || "foodcourt";
-      const ordersCol = collection(db, "restaurants", resId, "orders");
-      const snapshot = await getDocs(ordersCol);
-      const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      setShowResetOrdersConfirm(false);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `orders_reset`);
-    } finally {
-      setIsResetOrdersLoading(false);
+  // Sync banner and settings from props
+  useEffect(() => {
+    if (bannerSettings) {
+      setBannerText(bannerSettings.text);
+      setBannerImageUrl(bannerSettings.imageUrl);
+      setBannerVisible(bannerSettings.visible);
+      setBannerBioVisible(bannerSettings.bioVisible !== false);
+      setCategoriesEnabled(bannerSettings.categoriesEnabled ?? true);
     }
-  };
-
-  const handleResetCategories = async () => {
-    setIsResetCategoriesLoading(true);
-    try {
-      const resId = restaurantId || "foodcourt";
-      const categoriesCol = collection(db, "restaurants", resId, "categories");
-      const snapshot = await getDocs(categoriesCol);
-      const deletePromises = snapshot.docs.map((doc) => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-      setShowResetCategoriesConfirm(false);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `categories_reset`);
-    } finally {
-      setIsResetCategoriesLoading(false);
-    }
-  };
+  }, [bannerSettings]);
 
   // 3. Banner updates
   const handleSaveBannerSettings = async (e: React.FormEvent) => {
@@ -920,6 +712,7 @@ export default function AdminConsole({
       imageUrl: bannerImageUrl || PRESET_IMAGES[2].value,
       visible: bannerVisible,
       bioVisible: bannerBioVisible,
+      categoriesEnabled: categoriesEnabled,
       updatedAt: new Date().toISOString()
     };
 
@@ -930,6 +723,162 @@ export default function AdminConsole({
       handleFirestoreError(err, OperationType.WRITE, "settings/banner");
     } finally {
       setIsUpdateBannerLoading(false);
+    }
+  };
+
+  // Add a new Category
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nameTrim = newCategoryName.trim();
+    if (!nameTrim || isSubmitCategoryLoading) return;
+    setIsSubmitCategoryLoading(true);
+
+    const categoryId = "cat_" + Math.random().toString(36).substring(2, 10);
+    try {
+      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "categories", categoryId);
+      await setDoc(docRef, {
+        id: categoryId,
+        name: nameTrim,
+        imageUrl: newCategoryImageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80", // Default nice food preset image if none uploaded
+        createdAt: new Date().toISOString()
+      });
+      setNewCategoryName("");
+      setNewCategoryImageUrl("");
+    } catch (err) {
+      console.error("Failed to add category:", err);
+    } finally {
+      setIsSubmitCategoryLoading(false);
+    }
+  };
+
+  // Remove all Categories in one block
+  const handleWipeAllCategories = async () => {
+    setIsWipingCategories(true);
+    setWipeCategoriesFeedback(null);
+    try {
+      for (const cat of categories) {
+        await deleteDoc(doc(db, "restaurants", restaurantId || "foodcourt", "categories", cat.id));
+      }
+      for (const item of items) {
+        if (item.category) {
+          await setDoc(doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id), { category: "" }, { merge: true });
+        }
+      }
+      setSelectedManageCategory(null);
+      setWipeCategoriesFeedback({
+        type: "success",
+        text: "Success: All categories have been permanently cleared. All items are moved to \"Others\"."
+      });
+      setShowConfirmWipeCategories(false);
+      setTimeout(() => {
+        setWipeCategoriesFeedback(null);
+      }, 3000);
+    } catch (err: any) {
+      console.error("Failed to remove all categories:", err);
+      setWipeCategoriesFeedback({
+        type: "error",
+        text: "Error wiping categories: " + (err.message || String(err))
+      });
+      setTimeout(() => {
+        setWipeCategoriesFeedback(null);
+      }, 3000);
+    } finally {
+      setIsWipingCategories(false);
+    }
+  };
+
+  // Delete an existing Category and update affected items to Others
+  const handleDeleteCategory = async (catId: string, catName: string) => {
+    try {
+      await deleteDoc(doc(db, "restaurants", restaurantId || "foodcourt", "categories", catId));
+      
+      const affectedItems = items.filter((i) => i.category === catName);
+      for (const item of affectedItems) {
+        await setDoc(
+          doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id), 
+          { category: "" }, 
+          { merge: true }
+        );
+      }
+      if (selectedManageCategory && selectedManageCategory.id === catId) {
+        setSelectedManageCategory(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+    }
+  };
+
+  // Convert and add multiple image selections into batch dishes
+  const handleMultipleImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          const newDish = {
+            id: "batch_" + Math.random().toString(36).substring(2, 12),
+            name: "",
+            price: "",
+            imageUrl: reader.result
+          };
+          setBatchDishes((prev) => [...prev, newDish]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleUpdateBatchDish = (id: string, field: "name" | "price", value: string) => {
+    setBatchDishes((prev) =>
+      prev.map((dish) => (dish.id === id ? { ...dish, [field]: value } : dish))
+    );
+  };
+
+  const handleRemoveBatchDish = (id: string) => {
+    setBatchDishes((prev) => prev.filter((dish) => dish.id !== id));
+  };
+
+  const handleConfirmBatchDishes = async () => {
+    if (batchDishes.length === 0 || !selectedManageCategory) return;
+
+    const invalid = batchDishes.some(
+      (d) => !d.name.trim() || isNaN(parseFloat(d.price)) || parseFloat(d.price) <= 0
+    );
+    if (invalid) {
+      alert("Please ensure all dishes have a valid name and price greater than 0.");
+      return;
+    }
+
+    setIsSubmitItemLoading(true);
+    try {
+      for (const dish of batchDishes) {
+        const cleanId = dish.name.trim().toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "") || "dish_" + Math.random().toString(36).substring(2, 8);
+
+        const itemId = cleanId + "_" + Math.random().toString(36).substring(2, 6);
+        const timestamp = new Date().toISOString();
+
+        const itemPayload = {
+          name: formatItemName(dish.name),
+          price: parseFloat(dish.price),
+          imageUrl: dish.imageUrl,
+          category: selectedManageCategory.name,
+          createdAt: timestamp
+        };
+
+        const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", itemId);
+        await setDoc(docRef, itemPayload);
+      }
+      setBatchDishes([]);
+      alert("Dishes successfully saved under category " + selectedManageCategory.name + "!");
+    } catch (err) {
+      console.error("Failed to save batch dishes:", err);
+      alert("Error saving dishes, please try again.");
+    } finally {
+      setIsSubmitItemLoading(false);
     }
   };
 
@@ -1130,7 +1079,7 @@ export default function AdminConsole({
                 </div>
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
                   <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Today's Revenue</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">₹{formatPrice(stats.revenueToday)}</p>
+                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">₹{stats.revenueToday.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -1214,7 +1163,7 @@ export default function AdminConsole({
 
                         {/* Price & Operation actions (for pending/processing/completed) */}
                         <div className="flex items-center justify-between sm:justify-start gap-3 shrink-0 border-t border-neutral-950/35 sm:border-0 pt-1.5 sm:pt-0">
-                          <span className="font-mono font-black text-neutral-100 text-[13.5px] sm:text-[15px] tracking-tight">₹{formatPrice(order.total)}</span>
+                          <span className="font-mono font-black text-neutral-100 text-[13.5px] sm:text-[15px] tracking-tight">₹{order.total.toFixed(0)}</span>
                           
                           <div className="flex items-center gap-1.5">
                             {order.status === "pending" && (
@@ -1261,451 +1210,66 @@ export default function AdminConsole({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              {/* Items Sub-Tab Headers */}
-              <div className="flex border-b border-neutral-900 pb-px gap-6">
-                <button
-                  type="button"
-                  onClick={() => setItemsSubTab("dishes")}
-                  className={`border-b-2 px-1 pb-3 text-xs uppercase tracking-wider font-sans font-bold transition-all cursor-pointer ${
-                    itemsSubTab === "dishes"
-                      ? "border-neutral-100 text-neutral-100 font-extrabold"
-                      : "border-transparent text-neutral-500 hover:text-neutral-300"
-                  }`}
-                >
-                  Manage Dishes ({items.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setItemsSubTab("categories")}
-                  className={`border-b-2 px-1 pb-3 text-xs uppercase tracking-wider font-sans font-bold transition-all cursor-pointer ${
-                    itemsSubTab === "categories"
-                      ? "border-neutral-100 text-neutral-100 font-extrabold"
-                      : "border-transparent text-neutral-500 hover:text-neutral-300"
-                  }`}
-                >
-                  Manage Categories ({categories.length})
-                </button>
-              </div>
-
-              {itemsSubTab === "dishes" ? (
-                <div className="space-y-4">
-                  <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-400 border-b border-neutral-900 pb-2">
-                    Active Dishes Catalog ({items.length})
-                  </h3>
-
-                  {items.length > 0 && (
-                    <div className="relative w-full mb-2 animate-none">
-                      <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-neutral-500">
-                        <Search className="h-3.5 w-3.5" />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Search active dishes by name or category..."
-                        value={dishSearchQuery}
-                        onChange={(e) => setDishSearchQuery(e.target.value)}
-                        className="w-full bg-neutral-950/40 border border-neutral-800/80 focus:border-neutral-700 px-4 py-2 pl-9 rounded-xl text-xs focus:outline-none placeholder:text-neutral-505 text-neutral-200 transition-all outline-none"
-                      />
-                      {dishSearchQuery && (
-                        <button 
-                          type="button"
-                          onClick={() => setDishSearchQuery("")}
-                          className="absolute inset-y-0 right-3 flex items-center text-neutral-500 hover:text-neutral-300 text-xs font-mono font-bold cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {items.length === 0 ? (
-                    <p className="font-sans text-xs text-neutral-700">No active dishes cataloged. Please go to the categories sub-tab, tap a category, and upload photos to seed dishes!</p>
-                  ) : sortedItems.length === 0 ? (
-                    <p className="font-sans text-xs text-neutral-500 py-4">No active dishes match your search query.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4" id="admin-items-catalog">
-                      {sortedItems.map((item) => (
-                        <div 
-                          key={item.id} 
-                          id={`admin-item-row-${item.id}`}
-                          className="flex items-center justify-between rounded-xl border border-neutral-900 bg-neutral-900/10 p-3 animate-none hover:bg-neutral-900/20 transition-all shadow-sm"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <img 
-                              src={item.imageUrl} 
-                              alt={item.name} 
-                              referrerPolicy="no-referrer"
-                              className="h-12 w-16 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900" 
-                            />
-                            <div className="min-w-0">
-                              <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{formatItemName(item.name)}</h4>
-                              <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                                <span className="font-mono text-xs text-neutral-500 font-bold">₹{formatPrice(item.price)}</span>
-                                {item.categoryId ? (
-                                  <span className="rounded bg-neutral-950 border border-neutral-850 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-indigo-400">
-                                    {categories.find(c => c.id === item.categoryId)?.name || "Category Loaded"}
-                                  </span>
-                                ) : (
-                                  <span className="rounded bg-neutral-950 border border-neutral-805 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-zinc-500">
-                                    Others
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {deletingItemId === item.id ? (
-                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                id={`confirm-delete-${item.id}`}
-                                className="rounded-lg bg-rose-950/50 border border-rose-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-rose-400 hover:bg-rose-900/40 transition-all cursor-pointer"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                onClick={() => setDeletingItemId(null)}
-                                className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
-                              <button
-                                onClick={() => handleEditItemInit(item)}
-                                id={`edit-item-${item.id}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-850 bg-neutral-950 text-neutral-450 hover:text-neutral-100 transition-colors cursor-pointer"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => setDeletingItemId(item.id)}
-                                id={`delete-item-${item.id}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-850 bg-neutral-950 text-neutral-600 hover:text-rose-450 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : activeSeedingCategory ? (
-                <div className="space-y-6" id="category-seeding-panel">
-                  {/* Seeder header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-900 pb-4 gap-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          setActiveSeedingCategory(null);
-                          setStagedDishes([]);
-                        }}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-neutral-100 transition-colors cursor-pointer"
-                        title="Back to Categories"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                      </button>
-                      <div>
-                        <h2 className="text-base font-bold text-neutral-100 uppercase tracking-wide">
-                          Upload Dishes to {activeSeedingCategory.name}
-                        </h2>
-                        <p className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
-                          Add multiple images to start listing their details
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Multi-image drag and click upload box */}
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border border-dashed rounded-xl border-zinc-800 bg-zinc-900/10 cursor-pointer hover:border-zinc-600 transition-all">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                        <Upload className="h-7 w-7 text-indigo-400 mb-2 animate-bounce" />
-                        <p className="text-xs text-neutral-200 font-sans font-bold">
-                          Click to select / upload multiple photos at once
-                        </p>
-                        <span className="text-[10px] text-neutral-500 font-mono mt-1">
-                          You can upload multiple files (JPG, PNG) directly
-                        </span>
-                      </div>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleBulkImageUpload}
-                      />
-                    </label>
-                  </div>
-
-                  {/* Staged Dishes Form List */}
-                  {stagedDishes.length > 0 ? (
-                    <div className="space-y-6">
-                      <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                          <h3 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-400">
-                            Configure Staged Dishes ({stagedDishes.length})
-                          </h3>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStagedDishes([]);
-                            setActiveStagedIdx(0);
-                          }}
-                          className="text-rose-450 hover:text-rose-350 text-[10px] font-mono uppercase font-bold cursor-pointer bg-transparent border-none outline-none"
-                        >
-                          Clear All
-                        </button>
-                      </div>
-
-                      {/* Horizontal Thumbnail Strip for Quick Navigation */}
-                      <div className="flex gap-2 pb-2 overflow-x-auto select-none no-scrollbar">
-                        {stagedDishes.map((dish, idx) => {
-                          const isCurrent = idx === activeStagedIdx;
-                          const isConfigured = dish.name.trim() !== "" && dish.price.toString().trim() !== "";
-                          return (
-                            <div
-                              key={dish.id}
-                              onClick={() => setActiveStagedIdx(idx)}
-                              className={`relative h-12 w-16 rounded-lg overflow-hidden cursor-pointer shrink-0 transition-all duration-200 ${
-                                isCurrent
-                                  ? "ring-2 ring-indigo-500 border-transparent scale-105"
-                                  : "border border-zinc-900 opacity-60 hover:opacity-100"
-                              }`}
-                            >
-                              <img
-                                src={dish.imageUrl}
-                                alt={`Draft ${idx + 1}`}
-                                referrerPolicy="no-referrer"
-                                className="h-full w-full object-cover"
-                              />
-                              {/* Serial badge */}
-                              <span className="absolute bottom-1 left-1 bg-black/80 text-[8px] font-mono font-bold text-zinc-300 px-1 py-px rounded leading-none">
-                                {idx + 1}
-                              </span>
-                              {/* Status dot */}
-                              {isConfigured ? (
-                                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-emerald-500 shadow border border-black"></span>
-                              ) : (
-                                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-amber-500 shadow border border-black"></span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Selected Draft Card */}
-                      {stagedDishes[activeStagedIdx] && (() => {
-                        const dish = stagedDishes[activeStagedIdx];
-                        return (
-                          <div
-                            key={`slider-card-${activeStagedIdx}`}
-                            className="bg-neutral-950/40 border border-neutral-900 p-4 rounded-xl flex flex-col md:flex-row gap-5"
-                          >
-                            {/* Image side */}
-                            <div className="w-full md:w-1/3 aspect-video md:aspect-square rounded-lg overflow-hidden border border-neutral-900 bg-neutral-950 relative shrink-0">
-                              <img
-                                src={dish.imageUrl}
-                                alt="Draft"
-                                referrerPolicy="no-referrer"
-                                className="h-full w-full object-cover"
-                              />
-                              <div className="absolute bottom-2 left-2 bg-black/75 px-2 py-0.5 rounded text-[8px] font-mono uppercase text-zinc-400 border border-zinc-850">
-                                Draft {activeStagedIdx + 1} of {stagedDishes.length}
-                              </div>
-                            </div>
-
-                            {/* Inputs side */}
-                            <div className="flex-grow flex flex-col justify-between space-y-4">
-                              <div className="space-y-3.5">
-                                <div className="space-y-1 text-left">
-                                  <label className="font-mono text-[9px] uppercase tracking-wider text-neutral-500 font-semibold flex justify-between">
-                                    <span>Dish Name</span>
-                                    {dish.name.trim() === "" && <span className="text-amber-500 text-[8px]">Required</span>}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    required
-                                    autoFocus
-                                    key={`staged-name-input-${activeStagedIdx}`}
-                                    placeholder="e.g. Kyoto Spicy Ramen, Salmon Sushi"
-                                    value={dish.name}
-                                    onChange={(e) => updateStagedDish(dish.id, "name", e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        document.getElementById("staged-price-input")?.focus();
-                                      }
-                                    }}
-                                    className="w-full rounded-lg border border-neutral-850 bg-neutral-950 px-3 py-2 font-sans text-xs text-neutral-100 placeholder-neutral-800 outline-none focus:border-indigo-500 transition-colors"
-                                  />
-                                </div>
-
-                                <div className="space-y-1 text-left">
-                                  <label className="font-mono text-[9px] uppercase tracking-wider text-neutral-500 font-semibold flex justify-between">
-                                    <span>Price (₹ INR)</span>
-                                    {dish.price.toString().trim() === "" && <span className="text-amber-500 text-[8px]">Required</span>}
-                                  </label>
-                                  <div className="relative">
-                                    <div className="absolute inset-y-0 left-2.5 flex items-center pointer-events-none text-neutral-600">
-                                      <IndianRupee className="h-3 w-3" />
-                                    </div>
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      required
-                                      id="staged-price-input"
-                                      placeholder="e.g. 150"
-                                      value={dish.price}
-                                      onChange={(e) => updateStagedDish(dish.id, "price", e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          if (activeStagedIdx < stagedDishes.length - 1) {
-                                            setActiveStagedIdx((prev) => prev + 1);
-                                          } else {
-                                            document.getElementById("bulk-confirm-save-btn")?.focus();
-                                          }
-                                        }
-                                      }}
-                                      className="w-full rounded-lg border border-neutral-850 bg-neutral-950 pl-7 pr-3 py-2 font-mono text-xs text-neutral-100 placeholder-neutral-800 outline-none focus:border-indigo-500 transition-colors"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Navigation and item actions */}
-                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-neutral-900/60">
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    disabled={activeStagedIdx === 0}
-                                    onClick={() => setActiveStagedIdx((prev) => prev - 1)}
-                                    className="flex h-7 px-2 items-center justify-center rounded bg-neutral-950 border border-neutral-900 text-neutral-400 hover:text-white disabled:opacity-30 cursor-pointer text-[10px] font-mono uppercase font-bold"
-                                  >
-                                    <ChevronLeft className="h-3 w-3 mr-0.5" />
-                                    <span>Prev</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={activeStagedIdx === stagedDishes.length - 1}
-                                    onClick={() => setActiveStagedIdx((prev) => prev + 1)}
-                                    className="flex h-7 px-2 items-center justify-center rounded bg-neutral-950 border border-neutral-900 text-neutral-400 hover:text-white disabled:opacity-30 cursor-pointer text-[10px] font-mono uppercase font-bold"
-                                  >
-                                    <span>Next</span>
-                                    <ChevronRight className="h-3 w-3 ml-0.5" />
-                                  </button>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() => removeStagedDish(dish.id)}
-                                  className="flex h-7 px-2 items-center justify-center rounded border border-neutral-900 bg-neutral-950/40 text-neutral-600 hover:text-rose-450 hover:bg-rose-950/10 hover:border-rose-900/40 transition-colors cursor-pointer text-[10px] font-mono uppercase font-bold"
-                                  title="Remove item"
-                                >
-                                  <Trash2 className="h-3 w-3 mr-1" />
-                                  <span>Remove Draft</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Instruction Help Note */}
-                      <div className="flex items-center gap-2 justify-center py-2 bg-indigo-950/10 border border-indigo-950/25 rounded-lg px-3">
-                        <Sparkles className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                        <span className="font-sans text-[10px] text-indigo-305 font-medium leading-normal">
-                          Fast Mode: Press <span className="font-mono bg-indigo-950 border border-indigo-850 px-1 py-0.2 rounded font-bold">Enter</span> to cycle from Name to Price, and to auto-slide to the next draft!
-                        </span>
-                      </div>
-
-                      {/* Bulk confirms action button */}
-                      <button
-                        id="bulk-confirm-save-btn"
-                        onClick={handleConfirmSeeding}
-                        disabled={isSeedingConfirmLoading}
-                        className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-neutral-100 py-3.5 font-sans text-xs font-bold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95 disabled:opacity-50 cursor-pointer shadow-md"
-                      >
-                        {isSeedingConfirmLoading ? (
-                          <span className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 animate-spin" />
-                            Seeding Saved Dishes...
-                          </span>
-                        ) : (
-                          <span>Confirm & Save {stagedDishes.length} Dishes</span>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-neutral-800 bg-neutral-950/50 p-8 text-center text-zinc-500 font-sans text-xs">
-                      No images selected yet. Please upload one or more food pictures above to fill out details.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
-                  {/* Left Column: Form Section */}
-                  <div className="space-y-6 md:col-span-12 lg:col-span-5">
+              {/* If no category is selected, show general Category Management */}
+              {!selectedManageCategory ? (
+                <>
+                  <div className="grid grid-cols-1 gap-8 md:grid-cols-12 font-sans">
+                  {/* Left column: Add/Create Category form */}
+                  <div className="space-y-6 md:col-span-5">
                     <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-5">
                       <div className="flex items-center gap-2 border-b border-neutral-900 pb-3">
-                        <Layers className="h-5 w-5 text-neutral-400" />
+                        <PlusCircle className="h-5 w-5 text-neutral-400" />
                         <h3 className="font-sans text-sm font-semibold uppercase tracking-wider">
-                          Add Category
+                          Create New Category
                         </h3>
                       </div>
-
-                      <form onSubmit={handleSaveCategory} className="space-y-4">
+                      <form onSubmit={handleAddCategory} className="space-y-4">
                         <div className="space-y-1">
-                          <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Category Name</label>
+                          <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">
+                            Category Name
+                          </label>
                           <input
                             type="text"
                             required
-                            id="form-category-name"
-                            placeholder="e.g. Tea, Chinese, Beverages, Desserts"
-                            value={categoryName}
-                            onChange={(e) => setCategoryName(e.target.value)}
-                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 font-sans text-sm text-neutral-100 placeholder-neutral-700 outline-none focus:border-neutral-505"
+                            placeholder="e.g. Tea, Chinese, Dessert"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 font-sans text-sm text-neutral-100 placeholder-neutral-700 outline-none focus:border-neutral-500"
                           />
                         </div>
 
+                        {/* Category Image Picker */}
                         <div className="space-y-2">
-                          <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Category Portrait / Landscape Image</label>
+                          <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 block">
+                            Category Display Photo
+                          </label>
                           
-                          {/* Photo preview zone if image exists */}
-                          {categoryImageUrl && (
+                          {newCategoryImageUrl && (
                             <div className="relative aspect-video rounded-xl overflow-hidden border border-neutral-900 bg-neutral-950">
-                              <img src={categoryImageUrl} alt="Preview" className="h-full w-full object-cover" />
+                              <img src={newCategoryImageUrl} alt="Preview" className="h-full w-full object-cover" />
                               <button
                                 type="button"
-                                onClick={() => setCategoryImageUrl("")}
+                                onClick={() => setNewCategoryImageUrl("")}
                                 className="absolute top-2 right-2 rounded-full bg-neutral-950/80 p-2 text-rose-400 hover:text-rose-200 transition-colors"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <X className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           )}
 
-                          {/* File upload input element */}
                           <div className="flex items-center justify-center w-full">
                             <label className="flex flex-col items-center justify-center w-full h-24 border border-dashed rounded-xl border-neutral-800 bg-neutral-950/50 cursor-pointer hover:border-neutral-600 transition-all">
-                              <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                              <div className="flex flex-col items-center justify-center pt-3 pb-4 text-center px-4">
                                 <Upload className="h-5 w-5 text-neutral-500 mb-1" />
                                 <p className="text-xs text-neutral-400 font-sans">
-                                  Click to upload category photo or drag and drop
+                                  Click to upload category icon photo
                                 </p>
-                                <span className="text-[10px] text-neutral-600 font-mono mt-0.5">JPG / PNG files</span>
                               </div>
                               <input
                                 type="file"
                                 accept="image/*"
-                                id="form-category-photo"
                                 className="hidden"
-                                onChange={(e) => renderBase64File(e, setCategoryImageUrl)}
+                                onChange={(e) => renderBase64File(e, setNewCategoryImageUrl)}
                               />
                             </label>
                           </div>
@@ -1714,235 +1278,649 @@ export default function AdminConsole({
                         <button
                           type="submit"
                           disabled={isSubmitCategoryLoading}
-                          id="save-category-btn"
-                          className="w-full rounded-xl border border-neutral-700 bg-neutral-100 py-3 font-sans text-xs font-bold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95 disabled:opacity-50 cursor-pointer animate-none"
+                          className="w-full rounded-xl border border-neutral-700 bg-neutral-100 py-3 font-sans text-xs font-bold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95 disabled:opacity-50"
                         >
-                          {isSubmitCategoryLoading ? "Saving..." : "Create Category"}
+                          {isSubmitCategoryLoading ? "Creating..." : "Add Category"}
                         </button>
                       </form>
                     </div>
                   </div>
 
-                  {/* Right Column: Dynamic Categories list */}
-                  <div className="space-y-4 md:col-span-12 lg:col-span-7">
-                    <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-400 border-b border-neutral-900 pb-2">
-                      Active Categories ({categories.length})
-                    </h3>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" id="admin-categories-catalog">
-                      {categories.map((cat) => (
-                        <div 
-                          key={cat.id} 
-                          id={`admin-category-row-${cat.id}`}
-                          onClick={() => handleStartSeeding(cat)}
-                          className="flex items-center justify-between rounded-xl border border-neutral-900 bg-neutral-900/10 p-3 hover:bg-neutral-900/25 transition-all cursor-pointer group text-left"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <img 
-                              src={cat.imageUrl} 
-                              alt={cat.name} 
-                              referrerPolicy="no-referrer"
-                              className="h-10 w-14 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900 group-hover:border-neutral-700 transition-colors" 
-                            />
-                            <div className="min-w-0 text-left">
-                              <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{formatItemName(cat.name)}</h4>
-                              <p className="font-mono text-[9px] text-zinc-500 uppercase tracking-wider">Tap to add dishes</p>
-                            </div>
-                          </div>
-
-                          {deletingCategoryId === cat.id ? (
-                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-4" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => handleDeleteCategory(cat.id)}
-                                className="rounded-lg bg-rose-950/50 border border-rose-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-rose-400 hover:bg-rose-900/40 transition-all cursor-pointer"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                onClick={() => setDeletingCategoryId(null)}
-                                className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-4" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => setDeletingCategoryId(cat.id)}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-600 hover:text-rose-450 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      {/* Special virtual "Others" category card for fallback / uncategorized items */}
-                      <div 
-                        key="others_fallback" 
-                        id="admin-category-row-others_fallback"
-                        onClick={() => handleStartSeeding({
-                          id: "others_fallback",
-                          name: "Others",
-                          imageUrl: "https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&q=80&w=400",
-                          createdAt: ""
-                        })}
-                        className="flex items-center justify-between rounded-xl border border-dashed border-zinc-805 bg-zinc-900/5 p-3 hover:bg-zinc-900/10 hover:border-zinc-700 transition-all cursor-pointer group text-left"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-10 w-14 rounded-lg bg-neutral-950 flex items-center justify-center border border-zinc-900 group-hover:border-zinc-750 shrink-0">
-                            <span className="text-zinc-500 font-bold font-mono text-[10px]">OTH</span>
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="font-sans text-sm font-bold text-zinc-350 truncate">Others</h4>
-                            <p className="font-mono text-[9px] text-zinc-650 uppercase tracking-wide">Uncategorized items</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 text-[9px] uppercase font-mono text-zinc-500 font-bold bg-zinc-950 border border-zinc-850 px-1.5 py-0.5 rounded shrink-0 ml-4">
-                          <span>Virtual</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Light-weight elegant modal for single item editing */}
-              {editingItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" id="single-item-edit-modal">
-                  <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-[#0d0d0d] p-6 space-y-5 shadow-2xl relative text-left">
-                    <div className="flex items-center justify-between border-b border-neutral-900 pb-3">
-                      <div className="flex items-center gap-2">
-                        <Edit2 className="h-4 w-4 text-neutral-400" />
-                        <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-200">
-                          Edit Dish Details
+                  {/* Right column: Categories List / Grid */}
+                  <div className="space-y-4 md:col-span-7 font-sans">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-neutral-900 pb-3 gap-3">
+                      <div>
+                        <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-400">
+                          Categories Directory
                         </h3>
+                        <p className="font-sans text-[11px] text-neutral-500 leading-relaxed mt-0.5">
+                          Tap on any category below to manage its dishes, or search items globally.
+                        </p>
                       </div>
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          setEditingItem(null);
-                          setItemName("");
-                          setItemPrice("");
-                          setItemImageUrl("");
-                          setItemCategoryId("");
-                        }} 
-                        className="text-zinc-500 hover:text-zinc-200 text-xs font-bold uppercase cursor-pointer"
-                      >
-                        Close
-                      </button>
-                    </div>
 
-                    <form onSubmit={handleSaveItem} className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Dish Name</label>
+                      {/* Search Bar for searching any item from any category */}
+                      <div className="relative w-full sm:w-56 shrink-0">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-neutral-500" />
                         <input
                           type="text"
-                          required
-                          id="form-item-name"
-                          placeholder="e.g. Kyoto Spicy Ramen"
-                          value={itemName}
-                          onChange={(e) => setItemName(e.target.value)}
-                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 font-sans text-sm text-neutral-100 placeholder-neutral-700 outline-none focus:border-neutral-505"
+                          placeholder="Search any item..."
+                          value={adminItemsSearchQuery}
+                          onChange={(e) => setAdminItemsSearchQuery(e.target.value)}
+                          className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-9 pr-4 text-xs font-sans text-neutral-200 outline-none focus:border-neutral-700 placeholder-neutral-600"
                         />
                       </div>
+                    </div>
 
-                      <div className="space-y-1">
-                        <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Price (₹ INR)</label>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-neutral-500">
-                            <IndianRupee className="h-4 w-4" />
-                          </div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            required
-                            id="form-item-price"
-                            placeholder="e.g. 14.50"
-                            value={itemPrice}
-                            onChange={(e) => setItemPrice(e.target.value)}
-                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-9 pr-4 py-3 font-mono text-sm text-neutral-100 placeholder-neutral-700 outline-none focus:border-neutral-505"
-                          />
+                    {adminItemsSearchQuery ? (
+                      <div className="space-y-4 pt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-500">
+                            Search Results ({items.filter(item => item.name.toLowerCase().includes(adminItemsSearchQuery.toLowerCase()) || (item.category && item.category.toLowerCase().includes(adminItemsSearchQuery.toLowerCase()))).length})
+                          </span>
+                          <button
+                            onClick={() => setAdminItemsSearchQuery("")}
+                            className="text-[10px] uppercase font-bold text-neutral-450 hover:text-white"
+                          >
+                            Clear
+                          </button>
                         </div>
-                      </div>
 
-                      {/* Category Selector (Optional) */}
-                      <div className="space-y-1">
-                        <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Category (Optional)</label>
-                        <select
-                          id="form-item-category-id"
-                          value={itemCategoryId}
-                          onChange={(e) => setItemCategoryId(e.target.value)}
-                          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 font-sans text-sm text-neutral-150 outline-none focus:border-neutral-505 cursor-pointer appearance-none"
-                          style={{ backgroundImage: "url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23737373%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3e%3cpolyline points=%276 9 12 15 18 9%27/%3e%3c/svg%3e')", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 16px center', backgroundSize: '16px' }}
-                        >
-                          <option value="" className="text-neutral-500">-- None / Select Category --</option>
-                          {categories.map((cat) => (
-                            <option key={cat.id} value={cat.id} className="text-neutral-105 bg-neutral-950">
-                              {cat.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                        {(() => {
+                          const filteredItems = items.filter(item => 
+                            item.name.toLowerCase().includes(adminItemsSearchQuery.toLowerCase()) ||
+                            (item.category && item.category.toLowerCase().includes(adminItemsSearchQuery.toLowerCase()))
+                          );
 
-                      <div className="space-y-2">
-                        <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Dish Photo</label>
-                        {itemImageUrl && (
-                          <div className="relative aspect-video rounded-xl overflow-hidden border border-neutral-900 bg-neutral-950">
-                            <img src={itemImageUrl} alt="Preview" className="h-full w-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => setItemImageUrl("")}
-                              className="absolute top-2 right-2 rounded-full bg-neutral-950/80 p-2 text-rose-400 hover:text-rose-200 transition-colors"
+                          if (filteredItems.length === 0) {
+                            return (
+                              <div className="text-center py-8 border border-dashed border-neutral-900 rounded-xl bg-neutral-950/20">
+                                <p className="text-xs text-neutral-500">No items found matching "{adminItemsSearchQuery}"</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-1 no-scrollbar">
+                              {filteredItems.map((item) => (
+                                <div
+                                  key={item.id}
+                                  id={`admin-all-item-row-${item.id}`}
+                                  className="flex items-center justify-between rounded-xl border border-neutral-900 bg-neutral-950/30 p-3 min-h-[70px] hover:border-neutral-800 transition-all font-sans"
+                                >
+                                  {editingDishId === item.id ? (
+                                    <div className="flex-grow flex items-center gap-3 min-w-0 pr-4">
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className="h-12 w-16 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900"
+                                      />
+                                      <div className="flex-grow grid grid-cols-2 gap-2">
+                                        <div className="space-y-0.5">
+                                          <span className="text-[8px] font-mono uppercase text-neutral-500">Dish Name</span>
+                                          <input
+                                            type="text"
+                                            value={editingDishName}
+                                            onChange={(e) => setEditingDishName(e.target.value)}
+                                            placeholder="Dish Name"
+                                            className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 outline-none focus:border-neutral-700"
+                                          />
+                                        </div>
+                                        <div className="space-y-0.5">
+                                          <span className="text-[8px] font-mono uppercase text-neutral-500">Price (₹)</span>
+                                          <input
+                                            type="number"
+                                            value={editingDishPrice}
+                                            onChange={(e) => setEditingDishPrice(e.target.value)}
+                                            placeholder="Price"
+                                            className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs font-mono text-neutral-200 outline-none focus:border-neutral-700"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="h-12 w-16 rounded-lg overflow-hidden flex-shrink-0 border border-neutral-900 bg-neutral-950">
+                                        {item.imageUrl ? (
+                                          <img
+                                            src={item.imageUrl}
+                                            alt={item.name}
+                                            referrerPolicy="no-referrer"
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center font-mono text-[8px] text-neutral-605">
+                                            NO PHOTO
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{formatItemName(item.name)}</h4>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <span className="font-mono text-xs text-neutral-400 font-semibold">₹{item.price.toFixed(2)}</span>
+                                          <span className="text-[9px] font-sans font-bold uppercase px-1.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-800/80 text-zinc-400">
+                                            {item.category || "Others"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {editingDishId === item.id ? (
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      <button
+                                        onClick={() => handleUpdateDishDetails(item.id)}
+                                        className="rounded-lg bg-emerald-950/50 border border-emerald-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-900/40 transition-all cursor-pointer"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingDishId(null)}
+                                        className="rounded-lg bg-zinc-900 border border-zinc-805 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : deletingItemId === item.id ? (
+                                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
+                                      <button
+                                        onClick={() => handleDeleteItem(item.id)}
+                                        className="rounded-lg bg-rose-950/50 border border-rose-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-rose-450 hover:bg-rose-900/40 transition-all cursor-pointer"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingItemId(null)}
+                                        className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                                      <button
+                                        onClick={() => {
+                                          setEditingDishId(item.id);
+                                          setEditingDishName(item.name);
+                                          setEditingDishPrice(item.price.toString());
+                                        }}
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                                        title="Edit Name & Price"
+                                      >
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingItemId(item.id)}
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-650 hover:text-rose-400 transition-colors cursor-pointer"
+                                        title="Delete Dish"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                        {/* Custom dynamic categories from DB - sorted newest first! */}
+                        {categories
+                          .filter((cat) => cat.id !== "others_bucket" && cat.name.toLowerCase() !== "others")
+                          .sort((a, b) => {
+                            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                            return bTime - aTime;
+                          })
+                          .map((cat) => {
+                            const count = items.filter((i) => i.category && i.category.toLowerCase() === cat.name.toLowerCase()).length;
+                            return (
+                              <div
+                                key={cat.id}
+                                onClick={() => setSelectedManageCategory(cat)}
+                                className="rounded-xl border border-neutral-900 bg-neutral-900/10 p-4 hover:border-neutral-800 hover:bg-neutral-900/20 cursor-pointer group transition-all relative"
+                              >
+                                <div className="flex items-center gap-3">
+                                  {/* Category Image display */}
+                                  <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-neutral-950 border border-neutral-800">
+                                    <img
+                                      src={cat.imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&auto=format&fit=crop&q=80"}
+                                      alt={cat.name}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                  </div>
+
+                                  <div className="flex-grow min-w-0 pr-6">
+                                    <h4 className="font-sans text-sm font-semibold text-neutral-300 group-hover:text-white transition-colors truncate">
+                                      {cat.name}
+                                    </h4>
+                                    <p className="font-sans text-[10px] text-neutral-500 mt-0.5 truncate">
+                                      Tap to publish dishes
+                                    </p>
+                                  </div>
+
+                                  {deletingCategoryId === cat.id ? (
+                                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        onClick={() => {
+                                          handleDeleteCategory(cat.id, cat.name);
+                                          setDeletingCategoryId(null);
+                                        }}
+                                        className="rounded-lg bg-rose-950/50 border border-rose-900/60 px-2.5 py-1 text-[10px] font-bold uppercase text-rose-450 hover:bg-rose-900/40 transition-all cursor-pointer"
+                                      >
+                                        Sure?
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingCategoryId(null)}
+                                        className="rounded-lg bg-zinc-900 border border-zinc-805 px-2.5 py-1 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-end gap-2 shrink-0">
+                                      <span className="font-mono text-xs font-extrabold text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded-md">
+                                        {count}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeletingCategoryId(cat.id);
+                                        }}
+                                        className="text-neutral-600 hover:text-rose-400 p-1 rounded-md transition-colors cursor-pointer"
+                                        title="Delete Category"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {/* Special static "Others" category card */}
+                        {(() => {
+                          const othersCount = items.filter((i) => !i.category || i.category.toLowerCase() === "" || i.category.toLowerCase() === "others").length;
+                          const othersDb = categories.find((c) => c.id === "others_bucket" || c.name.toLowerCase() === "others");
+                          const othersImageUrl = othersDb?.imageUrl;
+                          return (
+                            <div
+                              onClick={() => setSelectedManageCategory(othersDb || { id: "others_bucket", name: "Others" })}
+                              className="rounded-xl border border-dashed border-neutral-800 bg-neutral-950/20 p-4 hover:border-neutral-600 hover:bg-neutral-950/40 cursor-pointer group transition-all"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                              <div className="flex items-center gap-3">
+                                {othersImageUrl ? (
+                                  <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-neutral-950 border border-neutral-805">
+                                    <img
+                                      src={othersImageUrl}
+                                      alt="Others Category Display"
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-neutral-900 border border-neutral-800 text-neutral-500 font-mono text-lg shrink-0">
+                                    #
+                                  </div>
+                                )}
+                                <div className="flex-grow min-w-0">
+                                  <h4 className="font-sans text-sm font-semibold text-neutral-300 group-hover:text-white transition-colors">
+                                    Others
+                                  </h4>
+                                  <p className="font-sans text-[10px] text-neutral-500 mt-0.5 truncate">
+                                    Dishes not in any other category
+                                  </p>
+                                </div>
+                                <span className="font-mono text-xs font-extrabold text-neutral-400 bg-neutral-900 px-2 py-1 rounded-md shrink-0">
+                                  {othersCount}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+                /* A specific category is managed */
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between border-b border-neutral-900 pb-3">
+                    <button
+                      onClick={() => {
+                        setSelectedManageCategory(null);
+                        setBatchDishes([]);
+                      }}
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Back to Categories Directory
+                    </button>
+                    <div className="text-right">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">Managing Category</span>
+                      <h2 className="font-sans text-lg font-black text-neutral-100">{selectedManageCategory.name}</h2>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-8 md:grid-cols-12 animate-fadeIn">
+                    {/* Left Column: BATCH IMAGE & DETAILS EDITOR */}
+                    <div className="space-y-6 md:col-span-6">
+                      {/* Category display image configuration panel */}
+                      <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-100">
+                              Category Display Image
+                            </h3>
+                            <p className="text-[11px] text-neutral-500 mt-1 leading-normal max-w-[210px]">
+                              Upload or update the representation photo for this category.
+                            </p>
                           </div>
-                        )}
+                          {/* image thumbnail */}
+                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-neutral-805 bg-neutral-950 shrink-0">
+                            <img 
+                              src={(categories.find(c => c.id === selectedManageCategory?.id || c.name.toLowerCase() === selectedManageCategory?.name.toLowerCase())?.imageUrl) || "https://images.unsplash.com/photo-1546549032-9571cd6b27df?w=100&auto=format&fit=crop&q=80"} 
+                              alt="Category cover" 
+                              className="w-full h-full object-cover font-mono text-[8px] text-neutral-600 uppercase text-center"
+                            />
+                          </div>
+                        </div>
 
                         <div className="flex items-center justify-center w-full">
-                          <label className="flex flex-col items-center justify-center w-full h-24 border border-dashed rounded-xl border-neutral-800 bg-neutral-950/50 cursor-pointer hover:border-neutral-600 transition-all">
-                            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                              <Upload className="h-5 w-5 text-neutral-500 mb-1" />
-                              <p className="text-xs text-neutral-400 font-sans">
-                                Click to upload food photo or drag-and-drop
-                              </p>
-                            </div>
+                          <label className="flex items-center justify-center gap-2 w-full h-12 border border-dashed rounded-xl border-neutral-800 bg-neutral-950/40 cursor-pointer hover:border-neutral-600 transition-all text-center">
+                            <Upload className="h-4 w-4 text-neutral-500 shrink-0" />
+                            <span className="text-xs text-neutral-300 font-sans font-semibold">
+                              Upload Category Icon
+                            </span>
                             <input
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={(e) => renderBase64File(e, setItemImageUrl)}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = async () => {
+                                  if (typeof reader.result === "string") {
+                                    try {
+                                      const catId = selectedManageCategory?.id || "others_bucket";
+                                      const docRef = doc(db, "restaurants", restaurantId || "foodcourt", "categories", catId);
+                                      await setDoc(docRef, {
+                                        id: catId,
+                                        name: selectedManageCategory?.name || "Others",
+                                        imageUrl: reader.result,
+                                        createdAt: selectedManageCategory?.createdAt || new Date().toISOString()
+                                      }, { merge: true });
+                                      alert("Category display photo updated successfully!");
+                                    } catch (err) {
+                                      console.error("Failed to save category image:", err);
+                                      alert("Could not update category image.");
+                                    }
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }}
                             />
                           </label>
                         </div>
                       </div>
 
-                      <div className="flex gap-3 pt-2">
-                        <button
-                          type="submit"
-                          disabled={isSubmitItemLoading}
-                          className="flex-grow rounded-xl border border-neutral-700 bg-neutral-100 py-3 font-sans text-xs font-bold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95 disabled:opacity-50 cursor-pointer"
-                        >
-                          {isSubmitItemLoading ? "Saving..." : "Apply Changes"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingItem(null);
-                            setItemName("");
-                            setItemPrice("");
-                            setItemImageUrl("");
-                            setItemCategoryId("");
-                          }}
-                          className="rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 font-sans text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-200 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
+                      <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-6">
+                        <div>
+                          <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-100">
+                            Add Dishes in Bulk
+                          </h3>
+                          <p className="text-xs text-neutral-550 mt-1 leading-relaxed">
+                            Upload multiple photos of dishes first. For each photo, fill in its title name and price instantly right on its side.
+                          </p>
+                        </div>
+
+                        {/* Multiple files choose click area */}
+                        <div className="flex items-center justify-center w-full">
+                          <label className="flex flex-col items-center justify-center w-full h-28 border border-dashed rounded-xl border-neutral-800 bg-neutral-950/50 cursor-pointer hover:border-neutral-600 transition-all">
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
+                              <ImagePlus className="h-6 w-6 text-neutral-500 mb-1" />
+                              <p className="text-xs text-neutral-300 font-sans font-semibold">
+                                Upload / Select Multiple Images
+                              </p>
+                              <span className="text-[10px] text-neutral-600 font-mono mt-0.5">Drag-and-drop or select several JPG/PNG images</span>
+                            </div>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleMultipleImagesSelect}
+                            />
+                          </label>
+                        </div>
+
+                        {/* Batch editor queue */}
+                        {batchDishes.length > 0 && (
+                          <div className="space-y-4 pt-2">
+                            <h4 className="font-mono text-[10px] uppercase tracking-widest text-neutral-400">
+                              Dishes Details queue ({batchDishes.length})
+                            </h4>
+
+                             <div className="max-h-96 overflow-y-auto space-y-4 pr-1">
+                              {batchDishes.map((dish) => (
+                                <div key={dish.id} className="flex gap-4 p-4 rounded-xl border border-neutral-800 bg-neutral-950/80 relative">
+                                  {/* Thumbnail */}
+                                  <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border border-neutral-800 bg-neutral-900">
+                                    <img src={dish.imageUrl} alt="Batch Preview" className="w-full h-full object-cover" />
+                                  </div>
+
+                                  {/* Side Fields */}
+                                  <div className="flex-grow grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                      <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-550">Dish Name</span>
+                                      <input
+                                        type="text"
+                                        required
+                                        id={`batch-name-${dish.id}`}
+                                        value={dish.name}
+                                        onChange={(e) => handleUpdateBatchDish(dish.id, "name", e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            const nextField = document.getElementById(`batch-price-${dish.id}`);
+                                            if (nextField) (nextField as HTMLInputElement).focus();
+                                          }
+                                        }}
+                                        placeholder="e.g. Kyoto Ramen"
+                                        className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-200 outline-none focus:border-neutral-600"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-550">Price (₹)</span>
+                                      <input
+                                        type="number"
+                                        required
+                                        step="0.01"
+                                        id={`batch-price-${dish.id}`}
+                                        value={dish.price}
+                                        onChange={(e) => handleUpdateBatchDish(dish.id, "price", e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            const index = batchDishes.findIndex((d) => d.id === dish.id);
+                                            if (index !== -1 && index < batchDishes.length - 1) {
+                                              const nextDish = batchDishes[index + 1];
+                                              const nextField = document.getElementById(`batch-name-${nextDish.id}`);
+                                              if (nextField) (nextField as HTMLInputElement).focus();
+                                            } else {
+                                              const confirmBtn = document.getElementById("confirm-batch-dishes-btn");
+                                              if (confirmBtn) (confirmBtn as HTMLButtonElement).focus();
+                                            }
+                                          }
+                                        }}
+                                        placeholder="e.g. 150"
+                                        className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-xs font-mono text-neutral-200 outline-none focus:border-neutral-600"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Delete slot */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveBatchDish(dish.id)}
+                                    className="absolute top-2 right-2 text-neutral-600 hover:text-rose-450 p-1 cursor-pointer"
+                                    title="Remove"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <button
+                              id="confirm-batch-dishes-btn"
+                              onClick={handleConfirmBatchDishes}
+                              disabled={isSubmitItemLoading}
+                              className="w-full rounded-xl border border-neutral-700 bg-neutral-100 py-3.5 font-sans text-xs font-bold uppercase tracking-wider text-neutral-950 transition-all hover:bg-neutral-200 active:scale-95 disabled:opacity-50 cursor-pointer"
+                            >
+                              {isSubmitItemLoading ? "Publishing Dishes..." : "Confirm & Save Dishes"}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    </form>
+                    </div>
+
+                    {/* Right Column: Existing Items in selected Category */}
+                    <div className="space-y-4 md:col-span-6 animate-fadeIn">
+                      {(() => {
+                        const currentCategoryName = selectedManageCategory.name;
+                        const belongsToThisCategory = items.filter((item) => {
+                          if (currentCategoryName === "Others") {
+                            return !item.category || item.category === "" || item.category.toLowerCase() === "others";
+                          }
+                          return item.category && item.category.toLowerCase() === currentCategoryName.toLowerCase();
+                        });
+
+                        return (
+                          <>
+                            <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-neutral-400 border-b border-neutral-900 pb-2">
+                              Dish list under {currentCategoryName} ({belongsToThisCategory.length})
+                            </h3>
+
+                            {belongsToThisCategory.length === 0 ? (
+                              <p className="font-sans text-xs text-neutral-600">No dishes currently found in this category.</p>
+                            ) : (
+                              <div className="space-y-3">
+                                {belongsToThisCategory.map((item) => (
+                                  <div
+                                    key={item.id}
+                                    id={`admin-item-row-${item.id}`}
+                                    className="flex items-center justify-between rounded-xl border border-neutral-900 bg-neutral-900/10 p-3 min-h-[70px]"
+                                  >
+                                    {editingDishId === item.id ? (
+                                      <div className="flex-grow flex items-center gap-3 min-w-0 pr-4">
+                                        <img
+                                          src={item.imageUrl}
+                                          alt={item.name}
+                                          className="h-12 w-16 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900"
+                                        />
+                                        <div className="flex-grow grid grid-cols-2 gap-2">
+                                          <div className="space-y-0.5">
+                                            <span className="text-[8px] font-mono uppercase text-neutral-500">Dish Name</span>
+                                            <input
+                                              type="text"
+                                              value={editingDishName}
+                                              onChange={(e) => setEditingDishName(e.target.value)}
+                                              placeholder="Dish Name"
+                                              className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 outline-none focus:border-neutral-700"
+                                            />
+                                          </div>
+                                          <div className="space-y-0.5">
+                                            <span className="text-[8px] font-mono uppercase text-neutral-500">Price (₹)</span>
+                                            <input
+                                              type="number"
+                                              value={editingDishPrice}
+                                              onChange={(e) => setEditingDishPrice(e.target.value)}
+                                              placeholder="Price"
+                                              className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs font-mono text-neutral-200 outline-none focus:border-neutral-700"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <img
+                                          src={item.imageUrl}
+                                          alt={item.name}
+                                          referrerPolicy="no-referrer"
+                                          className="h-12 w-16 rounded-lg object-cover bg-neutral-950 flex-shrink-0 border border-neutral-900"
+                                        />
+                                        <div className="min-w-0">
+                                          <h4 className="font-sans text-sm font-medium text-neutral-200 truncate">{formatItemName(item.name)}</h4>
+                                          <p className="font-mono text-xs text-neutral-550">₹{item.price.toFixed(2)}</p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {editingDishId === item.id ? (
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <button
+                                          onClick={() => handleUpdateDishDetails(item.id)}
+                                          className="rounded-lg bg-emerald-950/50 border border-emerald-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-emerald-400 hover:bg-emerald-900/40 transition-all cursor-pointer"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => setEditingDishId(null)}
+                                          className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    ) : deletingItemId === item.id ? (
+                                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
+                                        <button
+                                          onClick={() => handleDeleteItem(item.id)}
+                                          className="rounded-lg bg-rose-950/50 border border-rose-900/60 px-2.5 py-1.5 text-[10px] font-bold uppercase text-rose-400 hover:bg-rose-900/40 transition-all cursor-pointer"
+                                        >
+                                          Confirm
+                                        </button>
+                                        <button
+                                          onClick={() => setDeletingItemId(null)}
+                                          className="rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                                        <button
+                                          onClick={() => {
+                                            setEditingDishId(item.id);
+                                            setEditingDishName(item.name);
+                                            setEditingDishPrice(item.price.toString());
+                                          }}
+                                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                                          title="Edit Name & Price"
+                                        >
+                                          <Edit2 className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => setDeletingItemId(item.id)}
+                                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-600 hover:text-rose-450 transition-colors cursor-pointer"
+                                          title="Delete Dish"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1959,12 +1937,12 @@ export default function AdminConsole({
               className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto"
             >
               <div className="rounded-2xl border border-neutral-900 bg-neutral-900/10 p-6 space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-neutral-900 pb-4 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-neutral-900 pb-3 gap-3">
                   <h3 className="font-sans text-sm font-semibold uppercase tracking-wider">Top Banner Controls</h3>
                   
-                  <div className="flex flex-col items-start gap-3.5 select-none w-full sm:w-auto">
+                  <div className="flex flex-col items-start gap-2.5">
                     {/* Banner Image Toggle SWITCH */}
-                    <div className="flex items-center gap-2 justify-between w-full sm:w-36">
+                    <div className="flex items-center gap-2 justify-between w-full min-w-[140px]">
                       <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
                         Banner: {bannerVisible ? "On" : "Off"}
                       </span>
@@ -1985,7 +1963,7 @@ export default function AdminConsole({
                     </div>
 
                     {/* Banner Bio Toggle SWITCH */}
-                    <div className="flex items-center gap-2 justify-between w-full sm:w-36">
+                    <div className="flex items-center gap-2 justify-between w-full min-w-[140px]">
                       <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
                         Bio: {bannerBioVisible ? "On" : "Off"}
                       </span>
@@ -2005,29 +1983,22 @@ export default function AdminConsole({
                       </button>
                     </div>
 
-                    {/* Category Block Toggle SWITCH */}
-                    <div className="flex items-center gap-2 justify-between w-full sm:w-36">
+                    {/* Categories Section Toggle SWITCH */}
+                    <div className="flex items-center gap-2 justify-between w-full min-w-[140px]">
                       <span className="font-mono text-[9px] uppercase tracking-wider text-neutral-500">
-                        Categories: {categoryEnabled ? "On" : "Off"}
+                        Categories: {categoriesEnabled ? "On" : "Off"}
                       </span>
                       <button
                         type="button"
-                        id="category-toggle-switch"
-                        onClick={async () => {
-                          try {
-                             const docRef = doc(db, "restaurants", restaurantId || "foodcourt");
-                             await updateDoc(docRef, { categoryEnabled: !categoryEnabled });
-                          } catch (err) {
-                             handleFirestoreError(err, OperationType.UPDATE, `restaurants/${restaurantId}`);
-                          }
-                        }}
+                        id="categories-toggle-switch"
+                        onClick={() => setCategoriesEnabled(!categoriesEnabled)}
                         className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
-                          categoryEnabled ? "bg-neutral-100" : "bg-neutral-800"
+                          categoriesEnabled ? "bg-neutral-100" : "bg-neutral-800"
                         }`}
                       >
                         <span
                           className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ${
-                            categoryEnabled ? "translate-x-4" : "translate-x-0"
+                            categoriesEnabled ? "translate-x-4" : "translate-x-0"
                           }`}
                         />
                       </button>
@@ -2143,180 +2114,170 @@ export default function AdminConsole({
                   </form>
                 </div>
 
-                {/* DATABASE TOOLS BLOCK */}
-                <div className="rounded-2xl border border-rose-955 bg-rose-955/5 p-6 space-y-5" id="database-tools-settings-panel">
-                  <div className="border-b border-rose-900/40 pb-4">
-                    <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-rose-405">
-                      <AlertTriangle className="h-5 w-5 text-rose-500" />
-                      Database Tools
-                    </h3>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">
-                      Completely purge cached collections to restart empty or populate custom offerings
-                    </p>
+                {/* SYSTEM RESET HOOK PANEL */}
+                <div className="space-y-4">
+                  <h3 className="font-sans text-[11px] font-bold uppercase tracking-widest text-neutral-500">System Reset Tools</h3>
+                  
+                  {/* Card 1: RESET ADDED ITEMS */}
+                  <div className="rounded-2xl border border-red-955 bg-rose-955/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
+                          RESET ADDED ITEMS
+                        </h4>
+                        <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
+                          Safely delete all food items from the catalog.
+                        </p>
+                      </div>
+                    </div>
+
+                    {wipeItemsFeedback && (
+                      <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                        wipeItemsFeedback.type === "success" 
+                          ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
+                          : "bg-rose-950/25 border border-rose-900 text-rose-400"
+                      }`}>
+                        {wipeItemsFeedback.text}
+                      </div>
+                    )}
+
+                    {!showConfirmWipeItems ? (
+                      <button
+                        onClick={() => {
+                          setShowConfirmWipeItems(true);
+                          setWipeItemsFeedback(null);
+                        }}
+                        className="w-full rounded-xl bg-red-950/15 border border-red-900 text-red-400 font-sans text-xs font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-neutral-905 active:scale-95 cursor-pointer"
+                      >
+                        Wipe All Items
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <button
+                          onClick={handleWipeAllItems}
+                          disabled={isWipingItems}
+                          className="w-full rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans text-xs font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                        >
+                          {isWipingItems ? "Deleting catalog..." : "⚠️ CONFIRM WIPE"}
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmWipeItems(false)}
+                          disabled={isWipingItems}
+                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-xs font-bold uppercase py-1.5 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {/* Clean Items */}
-                    <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-4 space-y-3 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">RESET ADDED ITEMS</h4>
-                        <p className="text-[10px] text-neutral-500 leading-normal">
-                          Delete all currently loaded food and beverage items in the menu catalog.
+                  {/* Card 2: RESET CATEGORYS */}
+                  <div className="rounded-2xl border border-red-955 bg-rose-955/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
+                          RESET CATEGORYS
+                        </h4>
+                        <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
+                          Wipe all existing categories in this workspace. All assigned dishes are safely preserved and relocated under the "Others" category.
                         </p>
-                      </div>
-
-                      <div className="space-y-2 pt-2">
-                        {wipeItemsFeedback && (
-                          <div className={`p-2 rounded-lg text-[10px] font-sans ${
-                            wipeItemsFeedback.type === "success" 
-                              ? "bg-emerald-950/25 border border-emerald-950 text-emerald-400" 
-                              : "bg-rose-950/25 border border-rose-950 text-rose-450"
-                          }`}>
-                            {wipeItemsFeedback.text}
-                          </div>
-                        )}
-
-                        {!showConfirmWipeItems ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowConfirmWipeItems(true);
-                              setWipeItemsFeedback(null);
-                            }}
-                            className="w-full rounded-xl bg-rose-950/20 border border-rose-900 hover:bg-rose-900/10 text-rose-450 font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all text-center cursor-pointer"
-                          >
-                            Reset Added Items
-                          </button>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <button
-                              type="button"
-                              onClick={handleWipeAllItems}
-                              disabled={isWipingItems}
-                              className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all disabled:opacity-40 cursor-pointer"
-                            >
-                              {isWipingItems ? "Deleting..." : "Confirm Delete"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmWipeItems(false)}
-                              disabled={isWipingItems}
-                              className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase py-1 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
 
-                    {/* Clean Categories */}
-                    <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-4 space-y-3 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">RESET CATEGORYS</h4>
-                        <p className="text-[10px] text-neutral-500 leading-normal">
-                          Delete all menu categories. Uncategorized items will fall back to virtual section.
-                        </p>
+                    {wipeCategoriesFeedback && (
+                      <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                        wipeCategoriesFeedback.type === "success" 
+                          ? "bg-emerald-950/25 border border-emerald-950 text-emerald-400" 
+                          : "bg-rose-950/25 border border-rose-900/60 text-rose-450"
+                      }`}>
+                        {wipeCategoriesFeedback.text}
                       </div>
+                    )}
 
-                      <div className="space-y-2 pt-2">
-                        {wipeCategoriesFeedback && (
-                          <div className={`p-2 rounded-lg text-[10px] font-sans ${
-                            wipeCategoriesFeedback.type === "success" 
-                              ? "bg-emerald-950/25 border border-emerald-950 text-emerald-400" 
-                              : "bg-rose-950/25 border border-rose-950 text-rose-450"
-                          }`}>
-                            {wipeCategoriesFeedback.text}
-                          </div>
-                        )}
+                    {!showConfirmWipeCategories ? (
+                      <button
+                        onClick={() => {
+                          setShowConfirmWipeCategories(true);
+                          setWipeCategoriesFeedback(null);
+                        }}
+                        disabled={categories.length === 0}
+                        className="w-full rounded-xl bg-red-950/15 border border-red-900 text-red-400 font-sans text-xs font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-neutral-905 active:scale-95 cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        Reset / Clear All Categories
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={handleWipeAllCategories}
+                          disabled={isWipingCategories}
+                          className="w-full rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans text-xs font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                        >
+                          {isWipingCategories ? "Clearing..." : "⚠️ CONFIRM RESET"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmWipeCategories(false)}
+                          disabled={isWipingCategories}
+                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-xs font-bold uppercase py-1.5 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                        {!showConfirmWipeCategories ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowConfirmWipeCategories(true);
-                              setWipeCategoriesFeedback(null);
-                            }}
-                            className="w-full rounded-xl bg-rose-950/20 border border-rose-900 hover:bg-rose-900/10 text-rose-450 font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all text-center cursor-pointer"
-                          >
-                            Reset Categorys
-                          </button>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <button
-                              type="button"
-                              onClick={handleWipeAllCategories}
-                              disabled={isWipingCategories}
-                              className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all disabled:opacity-40 cursor-pointer"
-                            >
-                              {isWipingCategories ? "Deleting..." : "Confirm Delete"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmWipeCategories(false)}
-                              disabled={isWipingCategories}
-                              className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase py-1 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
+                  {/* Card 3: RESET ORDERS */}
+                  <div className="rounded-2xl border border-red-955 bg-rose-955/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
+                          RESET ORDERS
+                        </h4>
+                        <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
+                          Wipe previous customer orders and metrics logs.
+                        </p>
                       </div>
                     </div>
 
-                    {/* Clean Orders */}
-                    <div className="rounded-xl border border-neutral-900 bg-neutral-950/40 p-4 space-y-3 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <h4 className="font-sans text-xs font-bold text-neutral-200 uppercase tracking-wider">RESET ORDERS</h4>
-                        <p className="text-[10px] text-neutral-500 leading-normal">
-                          Clear and wipe previous table orders queue and daily analytical charts completely.
-                        </p>
+                    {wipeOrdersFeedback && (
+                      <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                        wipeOrdersFeedback.type === "success" 
+                          ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
+                          : "bg-rose-950/25 border border-rose-900 text-rose-450"
+                      }`}>
+                        {wipeOrdersFeedback.text}
                       </div>
+                    )}
 
-                      <div className="space-y-2 pt-2">
-                        {wipeOrdersFeedback && (
-                          <div className={`p-2 rounded-lg text-[10px] font-sans ${
-                            wipeOrdersFeedback.type === "success" 
-                              ? "bg-emerald-950/25 border border-emerald-950 text-emerald-400" 
-                              : "bg-rose-950/25 border border-rose-950 text-rose-450"
-                          }`}>
-                            {wipeOrdersFeedback.text}
-                          </div>
-                        )}
-
-                        {!showConfirmWipeOrders ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowConfirmWipeOrders(true);
-                              setWipeOrdersFeedback(null);
-                            }}
-                            className="w-full rounded-xl bg-rose-950/20 border border-rose-900 hover:bg-rose-900/10 text-rose-450 font-sans text-[10px] font-bold uppercase tracking-wider py-2.5 transition-all text-center cursor-pointer"
-                          >
-                            Reset Orders
-                          </button>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <button
-                              type="button"
-                              onClick={handleWipeAllOrders}
-                              disabled={isWipingOrders}
-                              className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-sans text-[10px] font-bold uppercase tracking-wider py-2 transition-all disabled:opacity-40 cursor-pointer"
-                            >
-                              {isWipingOrders ? "Clearing..." : "Confirm Purge"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowConfirmWipeOrders(false)}
-                              disabled={isWipingOrders}
-                              className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-[10px] font-bold uppercase py-1 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
+                    {!showConfirmWipeOrders ? (
+                      <button
+                        onClick={() => {
+                          setShowConfirmWipeOrders(true);
+                          setWipeOrdersFeedback(null);
+                        }}
+                        className="w-full rounded-xl bg-red-950/15 border border-red-900 text-red-400 font-sans text-xs font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-neutral-905 active:scale-95 cursor-pointer"
+                      >
+                        Wipe Orders
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <button
+                          onClick={handleWipeAllOrders}
+                          disabled={isWipingOrders}
+                          className="w-full rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans text-xs font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                        >
+                          {isWipingOrders ? "Clearing..." : "⚠️ CONFIRM WIPE"}
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmWipeOrders(false)}
+                          disabled={isWipingOrders}
+                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-xs font-bold uppercase py-1.5 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2343,18 +2304,18 @@ export default function AdminConsole({
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-550">Monthly Revenue</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{formatPrice(analytics.revenueThisMonth)}</p>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Monthly Revenue</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-550">Revenue (Total)</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{formatPrice(analytics.totalRevenue)}</p>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Revenue (Total)</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.totalRevenue.toFixed(2)}</p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-550">Average Ticket (AOV)</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-amber-500 font-extrabold">₹{formatPrice(analytics.avgOrderValue)}</p>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Average Ticket (AOV)</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-amber-500 font-extrabold">₹{analytics.avgOrderValue.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -2369,7 +2330,7 @@ export default function AdminConsole({
                         <Award className="h-4 w-4 text-amber-500 animate-bounce" />
                         Best-Sellers Ranking
                       </h3>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Dishes by units sold</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Dishes by units sold (Max 10)</p>
                     </div>
                     <span className="rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1 font-mono text-[10px] text-zinc-400">
                       Total items: {analytics.bestSellers.reduce((acc, i) => acc + i.qty, 0)}
@@ -2381,8 +2342,8 @@ export default function AdminConsole({
                       No completed orders yet to compute rankings.
                     </div>
                   ) : (
-                    <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
-                      {analytics.bestSellers.map((item, idx) => {
+                    <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1 text-zinc-200">
+                      {analytics.bestSellers.slice(0, 10).map((item, idx) => {
                         const maxVal = analytics.bestSellers[0]?.qty || 1;
                         const percent = (item.qty / maxVal) * 100;
                         return (
@@ -2395,7 +2356,7 @@ export default function AdminConsole({
                               </div>
                               <div className="flex items-center gap-3 font-mono">
                                 <span className="text-zinc-100 font-bold">{item.qty} sold</span>
-                                <span className="text-emerald-500">₹{formatPrice(item.revenue)}</span>
+                                <span className="text-emerald-500">₹{item.revenue.toFixed(2)}</span>
                               </div>
                             </div>
                             <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-900">
@@ -2411,35 +2372,34 @@ export default function AdminConsole({
                   )}
                 </div>
 
-                {/* TABLE PERFORMANCE */}
+                {/* MONTHS - TOTAL REVENUE MONTHLY(HISTORY) */}
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/20 p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold tracking-wider uppercase text-zinc-100 flex items-center gap-2">
-                        <Users className="h-4 w-4 text-indigo-500" />
-                        Table Occupancy & Spending
+                        <TrendingUp className="h-4 w-4 text-indigo-500" />
+                        MONTHS - TOTAL Revenue MONTHLY (HISTORY)
                       </h3>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Active customer zones</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Monthly earnings recap</p>
                     </div>
                   </div>
 
-                  {analytics.tablesRanked.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-500 text-xs">
-                      No customer transactions logged currently.
+                  {analytics.monthlyHistory.length === 0 ? (
+                    <div className="text-center py-12 text-zinc-500 text-xs text-zinc-400">
+                      No completed orders yet to compute monthly history.
                     </div>
                   ) : (
                     <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-                      {analytics.tablesRanked.map((table, idx) => (
-                        <div key={table.tableId} className="flex items-center justify-between rounded-xl border border-zinc-800/40 bg-zinc-950 p-3 transition-all hover:bg-zinc-900/40">
+                      {analytics.monthlyHistory.map((history, idx) => (
+                        <div key={history.month} className="flex items-center justify-between rounded-xl border border-zinc-800/40 bg-zinc-950 p-3 transition-all hover:bg-zinc-900/40">
                           <div className="flex items-center gap-3">
                             <span className="font-mono text-zinc-500 text-xs font-bold w-4">#{idx + 1}</span>
                             <div className="rounded-lg bg-zinc-900 border border-zinc-850 py-1 px-2.5 font-mono text-xs font-extrabold text-indigo-400">
-                              {table.tableId}
+                              {formatMonthName(history.month)}
                             </div>
                           </div>
-                          <div className="flex items-center gap-5 text-xs font-medium">
-                            <span className="font-mono text-zinc-400">{table.count} order{table.count > 1 ? "s" : ""}</span>
-                            <span className="font-mono text-zinc-100 font-bold">Sum: <span className="text-emerald-400 font-extrabold">₹{formatPrice(table.total)}</span></span>
+                          <div className="flex items-center text-xs font-medium">
+                            <span className="font-mono text-zinc-100 font-bold">Total: <span className="text-emerald-400 font-extrabold ml-1">₹{history.total.toFixed(2)}</span></span>
                           </div>
                         </div>
                       ))}
