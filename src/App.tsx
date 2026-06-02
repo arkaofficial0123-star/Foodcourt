@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { MenuItem, Order, BannerSettings, Category } from "./types";
 import { db, handleFirestoreError, OperationType } from "./firebase";
-import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc, query, where } from "firebase/firestore";
 import TableSelector from "./components/TableSelector";
 import ClientMenu from "./components/ClientMenu";
 import AdminConsole from "./components/AdminConsole";
@@ -255,6 +255,16 @@ export default function App() {
 
     setIsDataLoading(true);
 
+    let restReady = false;
+    let itemsReady = false;
+    let catsReady = false;
+
+    const checkReady = () => {
+      if (restReady && itemsReady && catsReady) {
+        setIsDataLoading(false);
+      }
+    };
+
     // Get Active Restaurant properties
     const unsubRest = onSnapshot(doc(db, "restaurants", restaurantId), (snap) => {
       if (snap.exists()) {
@@ -271,6 +281,8 @@ export default function App() {
         setRestaurantName("Unknown Brand");
         setIsRestaurantDisabled(false);
       }
+      restReady = true;
+      checkReady();
     });
 
     // Populate and listen to catalog
@@ -291,9 +303,12 @@ export default function App() {
         }
       });
       setMenuItems(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-      setIsDataLoading(false);
+      itemsReady = true;
+      checkReady();
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, itemsPath);
+      itemsReady = true;
+      checkReady();
     });
 
     // Populate and listen to categories
@@ -310,33 +325,75 @@ export default function App() {
         });
       });
       setCategories(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    }, () => {});
-
-    // Populate and listen to active orders list
-    const ordersPath = `restaurants/${restaurantId}/orders`;
-    const unsubOrders = onSnapshot(collection(db, "restaurants", restaurantId, "orders"), (snapshot) => {
-      const fetched: Order[] = [];
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data();
-        fetched.push({
-          id: docSnap.id,
-          tableId: d.tableId,
-          items: (d.items || []).map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            price: typeof item.price === "number" ? item.price : (parseFloat(item.price) || 0),
-            quantity: item.quantity
-          })),
-          total: typeof d.total === "number" ? d.total : (parseFloat(d.total) || 0),
-          status: d.status,
-          createdAt: d.createdAt,
-          updatedAt: d.updatedAt,
-        });
-      });
-      setOrders(fetched);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, ordersPath);
+      catsReady = true;
+      checkReady();
+    }, () => {
+      catsReady = true;
+      checkReady();
     });
+
+    // Populate and listen to active orders list (Optimized query: scan QR codes load first!)
+    let unsubOrders = () => {};
+    if (isAdmin) {
+      // Admin dashboard requires viewing all orders
+      const ordersPath = `restaurants/${restaurantId}/orders`;
+      unsubOrders = onSnapshot(collection(db, "restaurants", restaurantId, "orders"), (snapshot) => {
+        const fetched: Order[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          fetched.push({
+            id: docSnap.id,
+            tableId: d.tableId,
+            items: (d.items || []).map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              price: typeof item.price === "number" ? item.price : (parseFloat(item.price) || 0),
+              quantity: item.quantity
+            })),
+            total: typeof d.total === "number" ? d.total : (parseFloat(d.total) || 0),
+            status: d.status,
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt,
+          });
+        });
+        setOrders(fetched);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, ordersPath);
+      });
+    } else if (tableId) {
+      // Customer at a specific table: only load their table's active / uncompleted orders
+      const ordersPath = `restaurants/${restaurantId}/orders`;
+      const q = query(
+        collection(db, "restaurants", restaurantId, "orders"),
+        where("tableId", "==", tableId)
+      );
+      unsubOrders = onSnapshot(q, (snapshot) => {
+        const fetched: Order[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          fetched.push({
+            id: docSnap.id,
+            tableId: d.tableId,
+            items: (d.items || []).map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              price: typeof item.price === "number" ? item.price : (parseFloat(item.price) || 0),
+              quantity: item.quantity
+            })),
+            total: typeof d.total === "number" ? d.total : (parseFloat(d.total) || 0),
+            status: d.status,
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt,
+          });
+        });
+        setOrders(fetched);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, ordersPath);
+      });
+    } else {
+      // Customers just browsing menu without any table assigned: no orders subscription necessary!
+      setOrders([]);
+    }
 
     // Populate banner text settings
     const bannerDocPath = `restaurants/${restaurantId}/settings/banner`;
@@ -365,7 +422,7 @@ export default function App() {
       unsubOrders();
       unsubBanner();
     };
-  }, [restaurantId]);
+  }, [restaurantId, isAdmin, tableId]);
 
   // State handlers to update URL cleanly
   const handleSelectRestaurant = (slug: string) => {
