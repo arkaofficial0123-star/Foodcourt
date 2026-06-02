@@ -664,7 +664,7 @@ export default function App() {
               <span className="text-black font-black text-xl">F</span>
             </div>
             <div>
-              <span className="font-serif italic font-bold text-lg text-white">Foodcourt Hub</span>
+              <span className="font-serif italic font-bold text-lg text-white">Foodcourt</span>
               <span className="ml-1.5 rounded-md bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 font-mono text-[8px] font-bold text-zinc-500 uppercase tracking-widest">
                 SaaS System
               </span>
