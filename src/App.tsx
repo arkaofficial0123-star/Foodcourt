@@ -755,20 +755,27 @@ export default function App() {
   if (isTablePathRestricted) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-12 text-zinc-100 animate-fadeIn relative overflow-hidden" id="restricted-table-access">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-zinc-900/10 rounded-full blur-[90px] pointer-events-none" />
-        <div className="w-full max-w-sm rounded-[28px] border border-zinc-900 bg-[#070709] p-8 text-center space-y-7 shadow-2xl relative z-10">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-850 text-zinc-400 text-2xl shadow-xl">
-            📱
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-rose-500/10 rounded-full blur-[90px] pointer-events-none" />
+        <div className="w-full max-w-md rounded-[28px] border border-rose-950/45 bg-[#0a0a0c]/90 backdrop-blur-md p-8 text-center space-y-6 shadow-2xl relative z-10">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-955/20 border border-rose-900/40 text-rose-500 text-xl font-bold shadow-xl">
+            🔒
           </div>
-          <div className="space-y-2.5">
-            <h1 className="font-serif italic text-2xl text-zinc-200 tracking-tight leading-normal">Scan Table QR Code</h1>
-            <p className="text-[11px] text-zinc-500 leading-relaxed font-sans max-w-[280px] mx-auto">
-              To browse our interactive food menu and place orders, please scan the physical QR code located on your dining table.
+          <div className="space-y-2">
+            <h1 className="font-serif italic text-2xl text-rose-400 tracking-tight leading-normal">Direct Access Restricted</h1>
+            <p className="text-[11px] text-zinc-500 leading-relaxed font-sans">
+              To browse menus and place orders, you must scan the physical QR code located on your table. Live operator dashboards and settings require credentials verification from the official login portal.
             </p>
           </div>
-          <div className="border-t border-zinc-900/60 pt-5 text-[10px] text-zinc-650 font-mono tracking-wider uppercase select-none">
-            Active Table Verification Required
-          </div>
+          <button
+            onClick={() => {
+              setIsTablePathRestricted(false);
+              window.history.pushState(null, "", "/restaurant");
+              window.dispatchEvent(new Event("popstate"));
+            }}
+            className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 hover:text-white font-sans text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer block active:scale-95 duration-150"
+          >
+            Go to Restaurant Login
+          </button>
         </div>
       </div>
     );
