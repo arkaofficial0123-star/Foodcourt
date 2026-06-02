@@ -147,8 +147,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         allowedId = data.superAdminId || "ADMIN";
       }
 
-      const inputUser = masterUsername.trim() || "ADMIN";
-      const inputPass = masterPassword.trim();
+      const inputUser = masterUsername;
+      const inputPass = masterPassword;
 
       if (
         inputUser === allowedId && inputPass === allowedPass
@@ -302,7 +302,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       const restRef = doc(db, "restaurants", slugClean);
       const payload = {
         name: newName.trim().toUpperCase() || "FOODCOURT",
-        password: newPassword.trim(),
+        password: newPassword,
         createdAt: new Date().toISOString(),
         isEnabled: true
       };
@@ -406,7 +406,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
   // Save new passcode and User ID for restaurant branch
   const handleSaveBranchSettings = async (oldId: string) => {
     const slugClean = editingSlug.trim();
-    const passwordClean = editingPassword.trim();
+    const passwordClean = editingPassword;
     
     if (!slugClean) {
       alert("User ID cannot be empty.");
@@ -537,8 +537,8 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
     setGlobalSettingsSuccess("");
     setGlobalSettingsError("");
 
-    const targetId = newGlobalAdminId.trim();
-    const targetPass = newGlobalAdminPassword.trim();
+    const targetId = newGlobalAdminId;
+    const targetPass = newGlobalAdminPassword;
 
     if (!targetId && !targetPass) {
       setGlobalSettingsError("Please provide a new ID Identity or Secret Passkey to update.");

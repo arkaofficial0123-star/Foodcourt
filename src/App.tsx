@@ -14,14 +14,93 @@ import SuperAdminConsole from "./components/SuperAdminConsole";
 import { Loader, Store, Shield, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
 
+// Helper to parse the initial route synchronously to prevent initial render flicker/delay
+const getInitialRouteState = () => {
+  const path = typeof window !== "undefined" ? window.location.pathname : "";
+  const pathParts = path.split("/").filter(Boolean);
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const hash = typeof window !== "undefined" ? window.location.hash : "";
+
+  const restParam = params.get("restaurant");
+  const tableParam = params.get("table");
+  const adminParam = params.get("admin");
+  const superParam = params.get("superadmin");
+
+  // If loading the app/superadmin on refresh, log them out for security
+  const isSuperRoute = pathParts[0] === "superadmin" || superParam === "true" || hash === "#superadmin";
+  
+  if (isSuperRoute) {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("superadmin_global_auth");
+      window.history.replaceState(null, "", "/");
+    }
+    return {
+      isSuperAdmin: false,
+      restaurantId: null,
+      tableId: null,
+      isAdmin: false,
+      isCustomerView: false,
+      isDataLoading: false
+    };
+  }
+
+  let initialRestaurantId: string | null = null;
+  let initialTableId: string | null = null;
+  let initialIsAdmin = false;
+  let initialIsCustomerView = false;
+  let initialIsDataLoading = false;
+
+  if (pathParts[0] === "restaurant" && pathParts[1]) {
+    initialRestaurantId = pathParts[1];
+    initialIsDataLoading = true;
+    if (pathParts[2] === "table" && pathParts[3]) {
+      initialTableId = decodeURIComponent(pathParts[3]);
+      initialIsCustomerView = true;
+      initialIsAdmin = false;
+    } else if (pathParts[2] === "menu") {
+      initialTableId = null;
+      initialIsCustomerView = true;
+      initialIsAdmin = false;
+    } else {
+      initialIsAdmin = true;
+      initialIsCustomerView = false;
+      initialTableId = null;
+    }
+  } else if (restParam) {
+    initialRestaurantId = restParam;
+    initialIsDataLoading = true;
+    if (tableParam) {
+      initialTableId = tableParam;
+      initialIsCustomerView = true;
+    } else if (adminParam === "true") {
+      initialIsAdmin = true;
+      initialIsCustomerView = false;
+    } else {
+      initialIsCustomerView = true;
+      initialTableId = null;
+    }
+  }
+
+  return {
+    isSuperAdmin: false,
+    restaurantId: initialRestaurantId,
+    tableId: initialTableId,
+    isAdmin: initialIsAdmin,
+    isCustomerView: initialIsCustomerView,
+    isDataLoading: initialIsDataLoading
+  };
+};
+
+const initialRoute = getInitialRouteState();
+
 export default function App() {
-  // Navigation & Multi-Tenant state
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  // Navigation & Multi-Tenant state with synchronous hydration to eliminate flickers
+  const [isSuperAdmin, setIsSuperAdmin] = useState(initialRoute.isSuperAdmin);
+  const [restaurantId, setRestaurantId] = useState<string | null>(initialRoute.restaurantId);
   const [restaurantName, setRestaurantName] = useState<string>("");
-  const [tableId, setTableId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isCustomerView, setIsCustomerView] = useState(false);
+  const [tableId, setTableId] = useState<string | null>(initialRoute.tableId);
+  const [isAdmin, setIsAdmin] = useState(initialRoute.isAdmin);
+  const [isCustomerView, setIsCustomerView] = useState(initialRoute.isCustomerView);
 
   // High safety permission flag
   const [isRestaurantDisabled, setIsRestaurantDisabled] = useState(false);
@@ -32,7 +111,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [bannerSettings, setBannerSettings] = useState<BannerSettings | null>(null);
-  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(initialRoute.isDataLoading);
 
   // Home portal index
   const [allRestaurants, setAllRestaurants] = useState<any[]>([]);
@@ -302,22 +381,22 @@ export default function App() {
     setLoginError("");
     setLoginSuccess("");
 
-    const userIdTrim = formUserId.trim();
-    const passwordTrim = formPassword.trim();
+    const userIdExact = formUserId;
+    const passwordExact = formPassword;
 
-    if (!userIdTrim || !passwordTrim) {
+    if (!userIdExact || !passwordExact) {
       setLoginError("INVALID PASSWORD !");
       setFormUserId("");
       setFormPassword("");
       setTimeout(() => {
         setLoginError("");
-      }, 2000);
+      }, 1000);
       return;
     }
 
-    // 1. Global Super Admin Match (Case-Insensitive Username, case-sensitive Password)
+    // 1. Global Super Admin Match (Strict case-sensitive and spacing-sensitive ID and Password)
     if (
-      userIdTrim.toLowerCase() === superAdminCredentials.id.toLowerCase() && passwordTrim === superAdminCredentials.password
+      userIdExact === superAdminCredentials.id && passwordExact === superAdminCredentials.password
     ) {
       setLoginSuccess("Verified. Launching admin center...");
       sessionStorage.setItem("superadmin_global_auth", "true");
@@ -327,18 +406,18 @@ export default function App() {
         setLoginSuccess("");
         setIsSuperAdmin(true);
         window.history.pushState(null, "", "/superadmin");
-      }, 2000);
+      }, 600);
       return;
     }
 
-    // 2. Individual Restaurant Tenant matching ONLY by unique ID (Case-Insensitive Username lookup)
+    // 2. Individual Restaurant Tenant matching (Strict case-sensitive and spacing-sensitive lookup)
     const matchedBranch = allRestaurants.find(r => 
-      r.id && r.id.toLowerCase() === userIdTrim.toLowerCase()
+      r.id && r.id === userIdExact
     );
 
     if (matchedBranch) {
       const correctPass = matchedBranch.password || "1234";
-      if (passwordTrim === correctPass) {
+      if (passwordExact === correctPass) {
         setLoginSuccess(`Correct! Welcome to the ${matchedBranch.name} portal.`);
         sessionStorage.setItem(`admin_role_${matchedBranch.id}`, "staff");
         setFormUserId("");
@@ -346,7 +425,7 @@ export default function App() {
         setTimeout(() => {
           setLoginSuccess("");
           handleSelectRestaurant(matchedBranch.id);
-        }, 2000);
+        }, 600);
         return;
       }
     }
@@ -356,7 +435,7 @@ export default function App() {
     setFormPassword("");
     setTimeout(() => {
       setLoginError("");
-    }, 2000);
+    }, 1000);
   };
 
   const handleSelectTableNum = (num: string) => {
@@ -382,14 +461,30 @@ export default function App() {
     }
   };
 
-  // Loading indicator for database connection
+  // Loading indicator for database connection with absolute silk-smooth layout
   if (isDataLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 font-sans text-neutral-400">
-        <div className="flex flex-col items-center gap-4">
-          <Loader className="h-8 w-8 animate-spin text-neutral-200" />
-          <p className="font-mono text-[9px] uppercase tracking-widest text-neutral-600">Connecting Database...</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-[#050505] font-sans text-zinc-100 relative overflow-hidden" id="app-database-loader">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-zinc-900/30 rounded-full blur-[90px] pointer-events-none animate-pulse" />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col items-center gap-5 relative z-10 text-center"
+        >
+          <div className="relative flex justify-center items-center h-16 w-16">
+            <div className="absolute h-12 w-12 rounded-full border-2 border-zinc-800 border-t-zinc-200 animate-spin" />
+            <div className="absolute h-7 w-7 rounded-full border border-zinc-900 border-b-zinc-550 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.2s' }} />
+          </div>
+          <div className="space-y-1 mt-2">
+            <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-zinc-400 select-none">
+              Loading
+            </p>
+            <p className="font-sans text-[10px] text-zinc-650 tracking-normal select-none">
+              Syncing with foodcourt network
+            </p>
+          </div>
+        </motion.div>
       </div>
     );
   }

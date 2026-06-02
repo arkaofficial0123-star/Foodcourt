@@ -123,7 +123,11 @@ export default function ClientMenu({
   const myActiveOrders = useMemo(() => {
     return (orders || [])
       .filter((o) => o.tableId === tableId && o.status !== "completed")
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => {
+        if (a.status === "accepted" && b.status === "pending") return -1;
+        if (a.status === "pending" && b.status === "accepted") return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
   }, [orders, tableId]);
 
   // Add item to persistent bottom cart sheet
@@ -371,10 +375,7 @@ export default function ClientMenu({
                 return (
                   <div key={order.id} className="py-1 flex items-center justify-between text-xs" id={`order-track-${order.id}`}>
                     <div className="flex items-center gap-2.5">
-                      <span className="font-mono text-[10px] text-zinc-400 font-semibold bg-zinc-900/60 border border-zinc-805 px-1.5 py-0.5 rounded">
-                        #{order.id.slice(-5).toUpperCase()}
-                      </span>
-                      <span className="text-zinc-500 font-sans text-[11px] truncate max-w-[140px] sm:max-w-md">
+                      <span className="text-zinc-500 font-sans text-[11px] truncate max-w-[180px] sm:max-w-md">
                         {order.items.map(i => `${formatItemName(i.name)} (x${i.quantity})`).join(", ")}
                       </span>
                     </div>

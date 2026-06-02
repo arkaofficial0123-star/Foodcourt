@@ -50,6 +50,41 @@ const formatMonthName = (monthStr: string): string => {
   }
 };
 
+const getCurrentRolloverTimes = () => {
+  const now = new Date();
+  
+  // Daily rollover boundary: Today at 12:00 PM (noon)
+  const today12PM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+  let dailyStart: Date;
+  if (now.getTime() >= today12PM.getTime()) {
+    dailyStart = today12PM;
+  } else {
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    dailyStart = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 12, 0, 0);
+  }
+
+  // Monthly rollover boundary: This month's 1st day at 12:00 PM
+  const thisMonth1st_12PM = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0);
+  let monthlyStart: Date;
+  if (now.getTime() >= thisMonth1st_12PM.getTime()) {
+    monthlyStart = thisMonth1st_12PM;
+  } else {
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    monthlyStart = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1, 12, 0, 0);
+  }
+
+  // Yearly rollover boundary: This year's Jan 1st at 12:00 PM
+  const thisYearJan1_12PM = new Date(now.getFullYear(), 0, 1, 12, 0, 0);
+  let yearlyStart: Date;
+  if (now.getTime() >= thisYearJan1_12PM.getTime()) {
+    yearlyStart = thisYearJan1_12PM;
+  } else {
+    yearlyStart = new Date(now.getFullYear() - 1, 0, 1, 12, 0, 0);
+  }
+
+  return { dailyStart, monthlyStart, yearlyStart };
+};
+
 // Pre-defined elegant default backgrounds if user does not upload a file
 const PRESET_IMAGES = [
   { name: "Dark Ember", value: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=400" },
@@ -138,13 +173,14 @@ export default function AdminConsole({
     setIsWipingOrders(true);
     setWipeOrdersFeedback(null);
     try {
-      for (const order of orders) {
+      const completedOrders = orders.filter(o => o.status === "completed");
+      for (const order of completedOrders) {
         const orderDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "orders", order.id);
         await deleteDoc(orderDocRef);
       }
       setWipeOrdersFeedback({
         type: "success",
-        text: "Success: All orders and analytical records have been permanently cleared."
+        text: "Success: All completed orders have been permanently cleared."
       });
       setShowConfirmWipeOrders(false);
       setTimeout(() => {
@@ -153,7 +189,7 @@ export default function AdminConsole({
     } catch (err: any) {
       setWipeOrdersFeedback({
         type: "error",
-        text: "Error wiping logs: " + (err.message || String(err))
+        text: "Error wiping completed orders: " + (err.message || String(err))
       });
       setTimeout(() => {
         setWipeOrdersFeedback(null);
@@ -205,6 +241,10 @@ export default function AdminConsole({
 
   useEffect(() => {
     fetchPasswordsAndCheckSession();
+    if (activeTab !== "items") {
+      setSelectedManageCategory(null);
+      setBatchDishes([]);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -294,7 +334,7 @@ export default function AdminConsole({
 
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!staffPasswordInput.trim()) return;
+    if (!staffPasswordInput) return;
     setCheckingAccess(true);
     setAuthError("");
     try {
@@ -322,7 +362,7 @@ export default function AdminConsole({
       setCurrentStaffPassword(staffPass);
       setCurrentSuperAdminPassword(superPass);
 
-      const input = staffPasswordInput.trim();
+      const input = staffPasswordInput;
       if (input === superPass) {
         if (restaurantId) {
           sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
@@ -349,7 +389,7 @@ export default function AdminConsole({
       }
     } catch (err: any) {
       console.error("Verification error:", err);
-      const input = staffPasswordInput.trim();
+      const input = staffPasswordInput;
       if (input === currentSuperAdminPassword) {
         if (restaurantId) {
           sessionStorage.setItem(`admin_role_${restaurantId}`, "superadmin");
@@ -375,19 +415,19 @@ export default function AdminConsole({
 
   const handleSaveStaffPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffPassword.trim()) return;
+    if (!newStaffPassword) return;
     setIsUpdatingPassword(true);
     try {
       if (restaurantId) {
         await setDoc(doc(db, "restaurants", restaurantId), {
-          password: newStaffPassword.trim()
+          password: newStaffPassword
         }, { merge: true });
       } else {
         // Global fallback bootstrap is fixed to "1234"
         console.log("Global default bypass.");
       }
-      alert("Staff password successfully changed to: " + newStaffPassword.trim());
-      setCurrentStaffPassword(newStaffPassword.trim());
+      alert("Staff password successfully changed to: " + newStaffPassword);
+      setCurrentStaffPassword(newStaffPassword);
       setNewStaffPassword("");
     } catch (err: any) {
       console.error("Failed to update staff password:", err);
@@ -399,14 +439,14 @@ export default function AdminConsole({
 
   const handleSaveSuperAdminPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSuperAdminPassword.trim()) return;
+    if (!newSuperAdminPassword) return;
     setIsUpdatingSuperAdminPassword(true);
     try {
       await setDoc(doc(db, "settings", "security"), {
-        superAdminPassword: newSuperAdminPassword.trim()
+        superAdminPassword: newSuperAdminPassword
       }, { merge: true });
-      alert("Super Admin password successfully changed to: " + newSuperAdminPassword.trim());
-      setCurrentSuperAdminPassword(newSuperAdminPassword.trim());
+      alert("Super Admin password successfully changed to: " + newSuperAdminPassword);
+      setCurrentSuperAdminPassword(newSuperAdminPassword);
       setNewSuperAdminPassword("");
     } catch (err: any) {
       console.error("Failed to update super admin password:", err);
@@ -448,18 +488,26 @@ export default function AdminConsole({
 
   // Statistics trackers
   const stats = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const { dailyStart } = getCurrentRolloverTimes();
+    const pendingCount = orders.filter(o => o.status === "pending").length;
+    const acceptedCount = orders.filter(o => o.status === "accepted").length;
+    
+    const completedToday = orders.filter(o => {
+      if (o.status !== "completed") return false;
+      try {
+        return new Date(o.createdAt).getTime() >= dailyStart.getTime();
+      } catch (err) {
+        return false;
+      }
+    });
+
+    const revenueToday = completedToday.reduce((sum, o) => sum + o.total, 0);
+
     return {
-      pendingCount: orders.filter(o => o.status === "pending").length,
-      acceptedCount: orders.filter(o => o.status === "accepted").length,
-      completedCount: orders.filter(o => o.status === "completed").length,
-      revenueToday: orders
-        .filter(o => o.status === "completed" && o.createdAt.slice(0, 10) === todayStr)
-        .reduce((sum, o) => sum + o.total, 0),
-      totalRevenue: orders
-        .filter(o => o.status === "completed")
-        .reduce((sum, o) => sum + o.total, 0)
+      pendingCount,
+      acceptedCount,
+      completedCount: completedToday.length,
+      revenueToday
     };
   }, [orders]);
 
@@ -472,48 +520,64 @@ export default function AdminConsole({
 
   // Analytics calculations and trends analysis
   const analytics = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const monthStr = now.toISOString().slice(0, 7);
-
+    const { dailyStart, monthlyStart, yearlyStart } = getCurrentRolloverTimes();
     const completedOrders = orders.filter(o => o.status === "completed");
 
-    // Orders counts
-    const ordersToday = orders.filter(o => o.createdAt.slice(0, 10) === todayStr);
-    const ordersThisMonth = orders.filter(o => o.createdAt.slice(0, 7) === monthStr);
-
-    // Revenue aggregations
+    // Revenue aggregations matching 12:00 PM rollover segments
     const revenueToday = completedOrders
-      .filter(o => o.createdAt.slice(0, 10) === todayStr)
+      .filter(o => {
+        try {
+          return new Date(o.createdAt).getTime() >= dailyStart.getTime();
+        } catch (e) {
+          return false;
+        }
+      })
       .reduce((sum, o) => sum + o.total, 0);
 
     const revenueThisMonth = completedOrders
-      .filter(o => o.createdAt.slice(0, 7) === monthStr)
+      .filter(o => {
+        try {
+          return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+        } catch (e) {
+          return false;
+        }
+      })
       .reduce((sum, o) => sum + o.total, 0);
 
-    const totalRevenue = completedOrders.reduce((sum, o) => sum + o.total, 0);
-
-    // Average order value (AOV)
-    const avgOrderValue = completedOrders.length > 0
-      ? (completedOrders.reduce((sum, o) => sum + o.total, 0) / completedOrders.length)
-      : 0;
-
-    // Best-selling dishes aggregation
-    const dishSales: { [name: string]: { qty: number; revenue: number; imageUrl: string } } = {};
-    completedOrders.forEach(order => {
-      order.items.forEach(item => {
-        if (!dishSales[item.name]) {
-          const matchedItem = items.find(i => i.name === item.name);
-          dishSales[item.name] = {
-            qty: 0,
-            revenue: 0,
-            imageUrl: matchedItem?.imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=200"
-          };
+    const totalRevenue = completedOrders
+      .filter(o => {
+        try {
+          return new Date(o.createdAt).getTime() >= yearlyStart.getTime();
+        } catch (e) {
+          return false;
         }
-        dishSales[item.name].qty += item.quantity;
-        dishSales[item.name].revenue += item.price * item.quantity;
+      })
+      .reduce((sum, o) => sum + o.total, 0);
+
+    // Best-selling dishes aggregation (Calculated monthly based on current month's completed orders)
+    const dishSales: { [name: string]: { qty: number; revenue: number; imageUrl: string } } = {};
+    completedOrders
+      .filter(order => {
+        try {
+          return new Date(order.createdAt).getTime() >= monthlyStart.getTime();
+        } catch (e) {
+          return false;
+        }
+      })
+      .forEach(order => {
+        order.items.forEach(item => {
+          if (!dishSales[item.name]) {
+            const matchedItem = items.find(i => i.name === item.name);
+            dishSales[item.name] = {
+              qty: 0,
+              revenue: 0,
+              imageUrl: matchedItem?.imageUrl || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=200"
+            };
+          }
+          dishSales[item.name].qty += item.quantity;
+          dishSales[item.name].revenue += item.price * item.quantity;
+        });
       });
-    });
 
     const bestSellers = Object.entries(dishSales)
       .map(([name, data]) => ({ name, ...data }))
@@ -546,35 +610,41 @@ export default function AdminConsole({
       .map(([tableId, data]) => ({ tableId, ...data }))
       .sort((a, b) => b.total - a.total);
 
-    // Monthly history aggregation
-    const monthlyPerformance: { [month: string]: number } = {};
-    completedOrders.forEach(o => {
-      try {
-        const monthVal = o.createdAt.slice(0, 7); // YYYY-MM
-        if (monthVal) {
-          monthlyPerformance[monthVal] = (monthlyPerformance[monthVal] || 0) + o.total;
+    // Monthly history aggregation for January to December of current year
+    const currentYear = new Date().getFullYear();
+    const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
+      const monthStart = new Date(currentYear, i, 1, 12, 0, 0);
+      const monthEnd = new Date(currentYear, i + 1, 1, 12, 0, 0);
+
+      const monthTotal = completedOrders.filter(o => {
+        try {
+          const t = new Date(o.createdAt).getTime();
+          return t >= monthStart.getTime() && t < monthEnd.getTime();
+        } catch (e) {
+          return false;
         }
-      } catch (err) {}
+      }).reduce((sum, o) => sum + o.total, 0);
+
+      const monthLabel = new Date(currentYear, i, 1).toLocaleDateString("en-US", { month: "long" });
+
+      return {
+        month: monthLabel,
+        total: monthTotal
+      };
     });
 
-    const monthlyHistory = Object.entries(monthlyPerformance)
-      .map(([month, total]) => ({
-        month,
-        total
-      }))
-      .sort((a, b) => b.month.localeCompare(a.month));
+    const historyYearlyTotal = monthlyHistory.reduce((sum, h) => sum + h.total, 0);
 
     return {
-      ordersTodayCount: ordersToday.length,
-      ordersThisMonthCount: ordersThisMonth.length,
       revenueToday,
       revenueThisMonth,
       totalRevenue,
-      avgOrderValue,
       bestSellers,
       hourlyOrders,
       tablesRanked,
-      monthlyHistory
+      monthlyHistory,
+      currentYear,
+      historyYearlyTotal
     };
   }, [orders, items]);
 
@@ -1148,9 +1218,6 @@ export default function AdminConsole({
 
                           {/* Order metadata and identifiers */}
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 sm:order-first">
-                            <span className="font-mono font-black text-neutral-300 text-[13px] sm:text-[14px] tracking-tight">
-                              #{order.id.slice(-5).toUpperCase()}
-                            </span>
                             <span className="rounded bg-zinc-950 border border-zinc-850 px-1.5 py-0.5 font-mono text-[12px] sm:text-[13px] font-black text-indigo-400">
                               {order.tableId}
                             </span>
@@ -1478,7 +1545,10 @@ export default function AdminConsole({
                             return (
                               <div
                                 key={cat.id}
-                                onClick={() => setSelectedManageCategory(cat)}
+                                onClick={() => {
+                                  if (deletingCategoryId === cat.id) return;
+                                  setSelectedManageCategory(cat);
+                                }}
                                 className="rounded-xl border border-neutral-900 bg-neutral-900/10 p-4 hover:border-neutral-800 hover:bg-neutral-900/20 cursor-pointer group transition-all relative"
                               >
                                 <div className="flex items-center gap-3">
@@ -1501,9 +1571,11 @@ export default function AdminConsole({
                                   </div>
 
                                   {deletingCategoryId === cat.id ? (
-                                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
                                       <button
-                                        onClick={() => {
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
                                           handleDeleteCategory(cat.id, cat.name);
                                           setDeletingCategoryId(null);
                                         }}
@@ -1512,7 +1584,11 @@ export default function AdminConsole({
                                         Sure?
                                       </button>
                                       <button
-                                        onClick={() => setDeletingCategoryId(null)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          setDeletingCategoryId(null);
+                                        }}
                                         className="rounded-lg bg-zinc-900 border border-zinc-805 px-2.5 py-1 text-[10px] font-bold uppercase text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
                                       >
                                         No
@@ -1527,6 +1603,7 @@ export default function AdminConsole({
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
+                                          e.preventDefault();
                                           setDeletingCategoryId(cat.id);
                                         }}
                                         className="text-neutral-600 hover:text-rose-400 p-1 rounded-md transition-colors cursor-pointer"
@@ -1594,10 +1671,10 @@ export default function AdminConsole({
                         setSelectedManageCategory(null);
                         setBatchDishes([]);
                       }}
-                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                      className="flex items-center gap-1.5 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-neutral-400 hover:text-white hover:bg-neutral-800 transition-all cursor-pointer"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Back to Categories Directory
+                      Back
                     </button>
                     <div className="text-right">
                       <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-500">Managing Category</span>
@@ -2227,15 +2304,15 @@ export default function AdminConsole({
                     )}
                   </div>
 
-                  {/* Card 3: RESET ORDERS */}
+                  {/* Card 3: RESET COMPLETED ORDERS */}
                   <div className="rounded-2xl border border-red-955 bg-rose-955/5 p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
-                          RESET ORDERS
+                          RESET COMPLETED ORDERS
                         </h4>
                         <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
-                          Wipe previous customer orders and metrics logs.
+                          Wipe previous completed customer orders cleanly.
                         </p>
                       </div>
                     </div>
@@ -2243,8 +2320,8 @@ export default function AdminConsole({
                     {wipeOrdersFeedback && (
                       <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
                         wipeOrdersFeedback.type === "success" 
-                          ? "bg-emerald-950/25 border border-emerald-900 text-emerald-400" 
-                          : "bg-rose-950/25 border border-rose-900 text-rose-450"
+                          ? "bg-emerald-950/25 border border-emerald-905 text-emerald-400" 
+                          : "bg-rose-950/25 border border-rose-905 text-rose-450"
                       }`}>
                         {wipeOrdersFeedback.text}
                       </div>
@@ -2258,7 +2335,7 @@ export default function AdminConsole({
                         }}
                         className="w-full rounded-xl bg-red-950/15 border border-red-900 text-red-400 font-sans text-xs font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-neutral-905 active:scale-95 cursor-pointer"
                       >
-                        Wipe Orders
+                        Wipe Completed Orders
                       </button>
                     ) : (
                       <div className="space-y-2">
@@ -2294,28 +2371,15 @@ export default function AdminConsole({
               className="space-y-8"
             >
               {/* KPI Grid */}
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4" id="analytics-kpi-grid">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="analytics-kpi-grid">
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">Today's Orders</span>
-                  <div className="mt-1 flex items-baseline justify-between">
-                    <span className="font-mono text-2xl font-bold text-white">{analytics.ordersTodayCount}</span>
-                    <span className="font-mono text-xs text-zinc-400">Monthly: {analytics.ordersThisMonthCount}</span>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Monthly Revenue</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">MONTHLY REVENUE</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Revenue (Total)</span>
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">YEARLY REVENUE</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.totalRevenue.toFixed(2)}</p>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-505">Average Ticket (AOV)</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-amber-500 font-extrabold">₹{analytics.avgOrderValue.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -2330,7 +2394,7 @@ export default function AdminConsole({
                         <Award className="h-4 w-4 text-amber-500 animate-bounce" />
                         Best-Sellers Ranking
                       </h3>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Dishes by units sold (Max 10)</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Dishes by units sold this month (Max 10)</p>
                     </div>
                     <span className="rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1 font-mono text-[10px] text-zinc-400">
                       Total items: {analytics.bestSellers.reduce((acc, i) => acc + i.qty, 0)}
@@ -2378,33 +2442,36 @@ export default function AdminConsole({
                     <div>
                       <h3 className="text-sm font-bold tracking-wider uppercase text-zinc-100 flex items-center gap-2">
                         <TrendingUp className="h-4 w-4 text-indigo-500" />
-                        MONTHS - TOTAL Revenue MONTHLY (HISTORY)
+                        MONTHLY REVENUE HISTORY
                       </h3>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Monthly earnings recap</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">January to December Monthwise History</p>
                     </div>
                   </div>
 
-                  {analytics.monthlyHistory.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-500 text-xs text-zinc-400">
-                      No completed orders yet to compute monthly history.
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-                      {analytics.monthlyHistory.map((history, idx) => (
-                        <div key={history.month} className="flex items-center justify-between rounded-xl border border-zinc-800/40 bg-zinc-950 p-3 transition-all hover:bg-zinc-900/40">
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-zinc-500 text-xs font-bold w-4">#{idx + 1}</span>
-                            <div className="rounded-lg bg-zinc-900 border border-zinc-850 py-1 px-2.5 font-mono text-xs font-extrabold text-indigo-400">
-                              {formatMonthName(history.month)}
-                            </div>
-                          </div>
-                          <div className="flex items-center text-xs font-medium">
-                            <span className="font-mono text-zinc-100 font-bold">Total: <span className="text-emerald-400 font-extrabold ml-1">₹{history.total.toFixed(2)}</span></span>
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                    {analytics.monthlyHistory.map((history, idx) => (
+                      <div key={history.month} className="flex items-center justify-between rounded-xl border border-zinc-800/40 bg-zinc-950 p-3 transition-all hover:bg-zinc-900/40">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-zinc-500 text-xs font-bold w-4">#{idx + 1}</span>
+                          <div className="rounded-lg bg-zinc-900 border border-zinc-850 py-1 px-2.5 font-mono text-xs font-extrabold text-indigo-400">
+                            {history.month}
                           </div>
                         </div>
-                      ))}
+                        <div className="flex items-center text-xs font-medium">
+                          <span className="font-mono text-zinc-100 font-bold">Total: <span className="text-emerald-400 font-extrabold ml-1">₹{history.total.toFixed(2)}</span></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-zinc-800/40 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-zinc-405 uppercase tracking-wider font-sans">
+                      Total Revenue in Year ({analytics.currentYear})
+                    </span>
+                    <div className="font-mono text-sm font-extrabold text-emerald-400">
+                      ₹{analytics.historyYearlyTotal.toFixed(2)}
                     </div>
-                  )}
+                  </div>
                 </div>
 
               </div>

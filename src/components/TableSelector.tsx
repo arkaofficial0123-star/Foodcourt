@@ -17,26 +17,16 @@ export default function TableSelector({ onSelectTable, restaurantName = "Foodcou
     "T-11", "T-12", "T-13", "T-14", "T-15", "T-16", "T-17", "T-18", "T-19", "T-20"
   ];
 
+  // A single, continuous silk-smooth fade-in of the entire container on load
   const containerVariants = {
-    hidden: { opacity: 0, y: 30 },
+    hidden: { opacity: 0, y: 15 },
     visible: {
       opacity: 1,
       y: 0,
       transition: {
-        duration: 0.6,
-        ease: [0.16, 1, 0.3, 1],
-        when: "beforeChildren",
-        staggerChildren: 0.03
+        duration: 0.5,
+        ease: [0.25, 1, 0.5, 1] // Quintic ease-out for ultimate smoothness
       }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, scale: 0.8 },
-    visible: { 
-      opacity: 1, 
-      scale: 1,
-      transition: { type: "spring", stiffness: 350, damping: 25 }
     }
   };
 
@@ -52,26 +42,17 @@ export default function TableSelector({ onSelectTable, restaurantName = "Foodcou
         className="w-full max-w-sm space-y-8 rounded-[28px] border border-zinc-800/60 bg-[#0a0a0a]/90 p-8 shadow-2xl backdrop-blur-md relative z-10"
       >
         
-        {/* Brand Header with dynamic scale transitions */}
-        <motion.div 
-          className="text-center space-y-3"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.5 }}
-        >
-          <motion.div 
-            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-black font-black text-2xl shadow-xl hover:rotate-3 transition-transform"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
+        {/* Brand Header with super clean static layout */}
+        <div className="text-center space-y-3">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-black font-black text-2xl shadow-xl transition-all duration-300 hover:rotate-3 hover:scale-105 active:scale-95 cursor-pointer">
             {restaurantName.charAt(0).toUpperCase()}
-          </motion.div>
+          </div>
           <h1 className="font-serif italic text-3xl text-white tracking-tight">
             {restaurantName}
           </h1>
-        </motion.div>
+        </div>
 
-        {/* Dynamic Selector */}
+        {/* Smooth, Direct Selector Grid */}
         <div className="space-y-6">
           <div className="text-center">
             <p className="text-sm text-zinc-400 leading-relaxed font-sans">
@@ -81,17 +62,14 @@ export default function TableSelector({ onSelectTable, restaurantName = "Foodcou
 
           <div className="grid grid-cols-4 gap-3">
             {tables.map((table) => (
-              <motion.button
+              <button
                 key={table}
                 id={`table-btn-${table}`}
-                variants={itemVariants}
                 onClick={() => onSelectTable(table)}
-                whileHover={{ scale: 1.05, border: "1px solid #71717a", backgroundColor: "#18181b" }}
-                whileTap={{ scale: 0.95 }}
-                className="flex h-12 items-center justify-center rounded-xl border border-zinc-805 bg-zinc-950 font-mono text-xs font-bold tracking-wider text-zinc-300 transition-all cursor-pointer shadow-sm"
+                className="flex h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 font-mono text-xs font-bold tracking-wider text-zinc-400 cursor-pointer shadow-sm transition-all duration-200 ease-out hover:bg-zinc-90 w-full hover:border-zinc-500 hover:text-white active:scale-95"
               >
                 {table}
-              </motion.button>
+              </button>
             ))}
           </div>
         </div>
