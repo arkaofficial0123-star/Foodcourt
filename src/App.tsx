@@ -40,7 +40,8 @@ const getInitialRouteState = () => {
       tableId: null,
       isAdmin: false,
       isCustomerView: false,
-      isDataLoading: false
+      isDataLoading: false,
+      isTablePathRestricted: false
     };
   }
 
@@ -49,45 +50,56 @@ const getInitialRouteState = () => {
   let initialIsAdmin = false;
   let initialIsCustomerView = false;
   let initialIsDataLoading = false;
+  let initialIsTablePathRestricted = false;
 
+  // STRICT PATH RESTRICITON:
+  // - Allowed visitor/customer path: /restaurant/:slug/table/:tableId (QR scan customer access)
+  // - Allowed operator login/directory path: /restaurant or / (and authenticated operator views)
+  // - Other direct access like /restaurant/:slug or /restaurant/:slug/menu is unaccepted unless authenticated!
   if (pathParts[0] === "restaurant" && pathParts[1]) {
     const slug = pathParts[1];
-    if (pathParts[2] === "table" && pathParts[3]) {
+    const hasTableId = pathParts[2] === "table" && pathParts[3];
+    const isAuthedOp = typeof window !== "undefined" && (
+      sessionStorage.getItem(`admin_role_${slug}`) === "staff" ||
+      sessionStorage.getItem(`admin_role_${slug}`) === "superadmin" ||
+      sessionStorage.getItem("superadmin_global_auth") === "true" ||
+      sessionStorage.getItem(`isAdminBypass_${slug}`) === "true"
+    );
+
+    if (hasTableId) {
       initialRestaurantId = slug;
-      initialTableId = decodeURIComponent(pathParts[3]);
+      initialTableId = decodeURIComponent(pathParts[3]!);
       initialIsCustomerView = true;
       initialIsAdmin = false;
+      initialIsTablePathRestricted = false;
       initialIsDataLoading = true;
-    } else if (pathParts[2] === "menu") {
+    } else if (isAuthedOp) {
       initialRestaurantId = slug;
-      initialTableId = null;
-      initialIsCustomerView = true;
-      initialIsAdmin = false;
       initialIsDataLoading = true;
-    } else {
-      // Require an authenticated session (e.g. they logged in or bypassed via master super admin) to access restaurant operator view directly
-      const hasAuth = typeof window !== "undefined" && (
-        sessionStorage.getItem(`admin_role_${slug}`) !== null ||
-        sessionStorage.getItem(`isAdminBypass_${slug}`) === "true" ||
-        sessionStorage.getItem("superadmin_global_auth") === "true"
-      );
-      if (hasAuth) {
-        initialRestaurantId = slug;
+      if (pathParts[2] === "table") {
+        initialIsTablePathRestricted = false;
         initialIsAdmin = true;
         initialIsCustomerView = false;
         initialTableId = null;
-        initialIsDataLoading = true;
-      } else {
-        // Direct unauthorized URL access is not acceptable, redirect to the /restaurant login page
-        if (typeof window !== "undefined") {
-          window.history.replaceState(null, "", "/restaurant");
-        }
-        initialRestaurantId = null;
+      } else if (pathParts[2] === "menu") {
+        initialTableId = null;
+        initialIsCustomerView = true;
         initialIsAdmin = false;
+        initialIsTablePathRestricted = false;
+      } else {
+        initialIsAdmin = true;
         initialIsCustomerView = false;
         initialTableId = null;
-        initialIsDataLoading = false;
+        initialIsTablePathRestricted = false;
       }
+    } else {
+      // Forbidden direct URL access!
+      initialIsTablePathRestricted = true;
+      initialIsAdmin = false;
+      initialIsCustomerView = false;
+      initialTableId = null;
+      initialRestaurantId = null;
+      initialIsDataLoading = false;
     }
   } else if (restParam) {
     initialRestaurantId = restParam;
@@ -110,7 +122,8 @@ const getInitialRouteState = () => {
     tableId: initialTableId,
     isAdmin: initialIsAdmin,
     isCustomerView: initialIsCustomerView,
-    isDataLoading: initialIsDataLoading
+    isDataLoading: initialIsDataLoading,
+    isTablePathRestricted: initialIsTablePathRestricted
   };
 };
 
@@ -124,6 +137,7 @@ export default function App() {
   const [tableId, setTableId] = useState<string | null>(initialRoute.tableId);
   const [isAdmin, setIsAdmin] = useState(initialRoute.isAdmin);
   const [isCustomerView, setIsCustomerView] = useState(initialRoute.isCustomerView);
+  const [isTablePathRestricted, setIsTablePathRestricted] = useState(initialRoute.isTablePathRestricted || false);
 
   // High safety permission flag
   const [isRestaurantDisabled, setIsRestaurantDisabled] = useState(false);
@@ -189,38 +203,47 @@ export default function App() {
         }
       } else if (pathParts[0] === "restaurant" && pathParts[1]) {
         const slug = pathParts[1];
+        
+        const hasTableId = pathParts[2] === "table" && pathParts[3];
+        const isAuthedOp = (
+          sessionStorage.getItem(`admin_role_${slug}`) === "staff" ||
+          sessionStorage.getItem(`admin_role_${slug}`) === "superadmin" ||
+          sessionStorage.getItem("superadmin_global_auth") === "true" ||
+          sessionStorage.getItem(`isAdminBypass_${slug}`) === "true"
+        );
 
-        if (pathParts[2] === "table" && pathParts[3]) {
+        if (hasTableId) {
           setRestaurantId(slug);
           setTableId(decodeURIComponent(pathParts[3]));
           setIsCustomerView(true);
           setIsAdmin(false);
-        } else if (pathParts[2] === "menu") {
+          setIsTablePathRestricted(false);
+        } else if (isAuthedOp) {
           setRestaurantId(slug);
-          setTableId(null);
-          setIsCustomerView(true);
-          setIsAdmin(false);
-        } else {
-          // Require active admin/staff authentication to enter staff console directly
-          const hasAuth = (
-            sessionStorage.getItem(`admin_role_${slug}`) !== null ||
-            sessionStorage.getItem(`isAdminBypass_${slug}`) === "true" ||
-            sessionStorage.getItem("superadmin_global_auth") === "true"
-          );
-          if (hasAuth) {
-            setRestaurantId(slug);
+          if (pathParts[2] === "table") {
+            setIsTablePathRestricted(false);
+            setIsAdmin(true);
+            setIsCustomerView(false);
+            setTableId(null);
+          } else if (pathParts[2] === "menu") {
+            setTableId(null);
+            setIsCustomerView(true);
+            setIsAdmin(false);
+            setIsTablePathRestricted(false);
+          } else {
             setIsCustomerView(false);
             setIsAdmin(true);
             setTableId(null);
-          } else {
-            // Direct unauthorized operator view access is forbidden, route back to login landing
-            window.history.replaceState(null, "", "/restaurant");
-            setRestaurantId(null);
-            setIsSuperAdmin(false);
-            setIsAdmin(false);
-            setIsCustomerView(false);
-            setIsDataLoading(false);
+            setIsTablePathRestricted(false);
           }
+        } else {
+          // Forbidden direct URL access!
+          setIsTablePathRestricted(true);
+          setIsAdmin(false);
+          setIsCustomerView(false);
+          setTableId(null);
+          setRestaurantId(null);
+          setIsDataLoading(false);
         }
       } else {
         // Search query fallback check
@@ -241,6 +264,7 @@ export default function App() {
             setIsSuperAdmin(true);
             setIsDataLoading(false);
           }
+          setIsTablePathRestricted(false);
         } else if (restParam) {
           setRestaurantId(restParam);
           if (tableParam) {
@@ -253,6 +277,7 @@ export default function App() {
             setIsCustomerView(true);
             setTableId(null);
           }
+          setIsTablePathRestricted(false);
         } else {
           // Clear states to show root landing
           setRestaurantId(null);
@@ -260,6 +285,11 @@ export default function App() {
           setIsAdmin(false);
           setIsCustomerView(false);
           setIsDataLoading(false);
+          setIsTablePathRestricted(false);
+          
+          if (window.location.pathname === "/") {
+            window.history.replaceState(null, "", "/restaurant");
+          }
         }
       }
     };
@@ -717,6 +747,36 @@ export default function App() {
             </form>
           </div>
         </main>
+      </div>
+    );
+  }
+
+  // Direct access blocked for /table without table identifier or unauthorized subpaths
+  if (isTablePathRestricted) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-12 text-zinc-100 animate-fadeIn relative overflow-hidden" id="restricted-table-access">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-rose-500/10 rounded-full blur-[90px] pointer-events-none" />
+        <div className="w-full max-w-md rounded-[28px] border border-rose-950/45 bg-[#0a0a0c]/90 backdrop-blur-md p-8 text-center space-y-6 shadow-2xl relative z-10">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-955/20 border border-rose-900/40 text-rose-500 text-xl font-bold shadow-xl">
+            🔒
+          </div>
+          <div className="space-y-2">
+            <h1 className="font-serif italic text-2xl text-rose-400 tracking-tight leading-normal">Direct Access Restricted</h1>
+            <p className="text-[11px] text-zinc-500 leading-relaxed font-sans">
+              To browse menus and place orders, you must scan the physical QR code located on your table. Live operator dashboards and settings require credentials verification from the official login portal.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setIsTablePathRestricted(false);
+              window.history.pushState(null, "", "/restaurant");
+              window.dispatchEvent(new Event("popstate"));
+            }}
+            className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 hover:text-white font-sans text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer block active:scale-95 duration-150"
+          >
+            Go to Restaurant Login
+          </button>
+        </div>
       </div>
     );
   }
