@@ -76,14 +76,24 @@ export default function ClientMenu({
 
   // Dynamically prepare the category list with NO "Others" category pill
   const renderedCategories = useMemo(() => {
-    // Determine the categories of items that have already been ordered across all tables
-    const orderedCategoryNames = new Set<string>();
-    (orders || []).forEach((order) => {
+    // Determine the most recent order timestamp for each category
+    const categoryLastOrderedTime = new Map<string, number>();
+
+    // Sort orders by createdAt ascending to ensure the latest timestamp is set at the end
+    const sortedOrders = [...(orders || [])].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return aTime - bTime;
+    });
+
+    sortedOrders.forEach((order) => {
+      const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : 0;
       order.items.forEach((orderedItem) => {
-        // Find corresponding MenuItem to lookup its category
         const matchedItem = (items || []).find((it) => it.id === orderedItem.id);
         if (matchedItem?.category) {
-          orderedCategoryNames.add(matchedItem.category.toLowerCase());
+          const catLower = matchedItem.category.toLowerCase();
+          const currentMax = categoryLastOrderedTime.get(catLower) || 0;
+          categoryLastOrderedTime.set(catLower, Math.max(currentMax, orderTime));
         }
       });
     });
@@ -91,14 +101,19 @@ export default function ClientMenu({
     return [...(categories || [])]
       .filter(cat => cat.name.toLowerCase() !== "others")
       .sort((a, b) => {
-        const aOrdered = orderedCategoryNames.has(a.name.toLowerCase());
-        const bOrdered = orderedCategoryNames.has(b.name.toLowerCase());
+        const aTimeOrdered = categoryLastOrderedTime.get(a.name.toLowerCase()) || 0;
+        const bTimeOrdered = categoryLastOrderedTime.get(b.name.toLowerCase()) || 0;
 
-        // Prioritize ordered categories first
-        if (aOrdered && !bOrdered) return -1;
-        if (!aOrdered && bOrdered) return 1;
+        // If one is ordered and the other is not:
+        if (aTimeOrdered > 0 && bTimeOrdered === 0) return -1;
+        if (aTimeOrdered === 0 && bTimeOrdered > 0) return 1;
 
-        // Fallback: newest categories first (Recent First)
+        // If both are ordered, sort by the one ordered more recently
+        if (aTimeOrdered > 0 && bTimeOrdered > 0) {
+          return bTimeOrdered - aTimeOrdered;
+        }
+
+        // Fallback: newest categories first (Recent First) based on category creation
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return bTime - aTime;
@@ -128,19 +143,54 @@ export default function ClientMenu({
       return item.category && item.category.toLowerCase() === selectedCategory.toLowerCase();
     });
 
-    // Obtain the set of item IDs that have already been ordered across all tables/orders (system-wide popular sort)
-    const orderedItemIds = new Set(
-      (orders || [])
-        .flatMap((o) => o.items.map((i) => i.id))
-    );
+    // Track the most recent order timestamp for each item ID and category name
+    const itemLastOrderedTime = new Map<string, number>();
+    const categoryLastOrderedTime = new Map<string, number>();
 
-    // Sort already-ordered items first, then newer items first
+    const sortedOrders = [...(orders || [])].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return aTime - bTime;
+    });
+
+    sortedOrders.forEach((order) => {
+      const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : 0;
+      order.items.forEach((orderedItem) => {
+        itemLastOrderedTime.set(orderedItem.id, orderTime);
+
+        const matchedItem = (items || []).find((it) => it.id === orderedItem.id);
+        if (matchedItem?.category) {
+          const catLower = matchedItem.category.toLowerCase();
+          const currentMax = categoryLastOrderedTime.get(catLower) || 0;
+          categoryLastOrderedTime.set(catLower, Math.max(currentMax, orderTime));
+        }
+      });
+    });
+
     return [...rawFiltered].sort((a, b) => {
-      const aOrdered = orderedItemIds.has(a.id);
-      const bOrdered = orderedItemIds.has(b.id);
-      if (aOrdered && !bOrdered) return -1;
-      if (!aOrdered && bOrdered) return 1;
+      const aOrderTime = itemLastOrderedTime.get(a.id) || 0;
+      const bOrderTime = itemLastOrderedTime.get(b.id) || 0;
 
+      // 1. Prioritize directly ordered items first (sorted by their last ordered time desc)
+      if (aOrderTime > 0 && bOrderTime === 0) return -1;
+      if (aOrderTime === 0 && bOrderTime > 0) return 1;
+      if (aOrderTime > 0 && bOrderTime > 0) {
+        return bOrderTime - aOrderTime; // Newest ordered first
+      }
+
+      // 2. Prioritize items belonging to an ordered category next (sorted by their category's last ordered time)
+      const aCatLower = a.category ? a.category.toLowerCase() : "";
+      const bCatLower = b.category ? b.category.toLowerCase() : "";
+      const aCatOrderedTime = categoryLastOrderedTime.get(aCatLower) || 0;
+      const bCatOrderedTime = categoryLastOrderedTime.get(bCatLower) || 0;
+
+      if (aCatOrderedTime > 0 && bCatOrderedTime === 0) return -1;
+      if (aCatOrderedTime === 0 && bCatOrderedTime > 0) return 1;
+      if (aCatOrderedTime > 0 && bCatOrderedTime > 0) {
+        return bCatOrderedTime - aCatOrderedTime; // Newest ordered category first
+      }
+
+      // 3. Fallback: newest items first (Recent First based on item creation)
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return bTime - aTime;
@@ -475,13 +525,10 @@ export default function ClientMenu({
 
                 {/* Info block */}
                 <div className="flex flex-col flex-1">
-                  <div className="flex justify-between items-start mb-4 gap-2">
-                    <h3 className="font-sans font-medium text-xs sm:text-sm text-zinc-200 group-hover:text-white transition-colors tracking-tight line-clamp-1">
+                  <div className="mb-4">
+                    <h3 className="font-sans font-medium text-xs sm:text-sm text-zinc-200 group-hover:text-white transition-colors tracking-tight line-clamp-1 block">
                       {formatItemName(item.name)}
                     </h3>
-                    <span className="text-zinc-400 font-mono text-xs sm:text-sm shrink-0">
-                      ₹{item.price.toFixed(2)}
-                    </span>
                   </div>
                   
                   <motion.button
@@ -491,7 +538,7 @@ export default function ClientMenu({
                     className="mt-auto w-full py-2.5 sm:py-3 bg-white hover:bg-zinc-100 text-black rounded-xl font-bold text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 text-xs sm:text-sm tracking-wide shadow-md"
                   >
                     <Plus className="h-4 w-4 shrink-0 text-black" />
-                    <span>Add Plate</span>
+                    <span>₹{item.price.toFixed(2)}</span>
                   </motion.button>
                 </div>
               </motion.div>

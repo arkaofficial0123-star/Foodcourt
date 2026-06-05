@@ -53,34 +53,14 @@ const formatMonthName = (monthStr: string): string => {
 const getCurrentRolloverTimes = () => {
   const now = new Date();
   
-  // Daily rollover boundary: Today at 12:00 PM (noon)
-  const today12PM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
-  let dailyStart: Date;
-  if (now.getTime() >= today12PM.getTime()) {
-    dailyStart = today12PM;
-  } else {
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    dailyStart = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 12, 0, 0);
-  }
+  // Daily rollover boundary: Start of today (00:00:00 local time)
+  const dailyStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-  // Monthly rollover boundary: This month's 1st day at 12:00 PM
-  const thisMonth1st_12PM = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0);
-  let monthlyStart: Date;
-  if (now.getTime() >= thisMonth1st_12PM.getTime()) {
-    monthlyStart = thisMonth1st_12PM;
-  } else {
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    monthlyStart = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1, 12, 0, 0);
-  }
+  // Monthly rollover boundary: Start of this month (1st day at 00:00:00 local time)
+  const monthlyStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 
-  // Yearly rollover boundary: This year's Jan 1st at 12:00 PM
-  const thisYearJan1_12PM = new Date(now.getFullYear(), 0, 1, 12, 0, 0);
-  let yearlyStart: Date;
-  if (now.getTime() >= thisYearJan1_12PM.getTime()) {
-    yearlyStart = thisYearJan1_12PM;
-  } else {
-    yearlyStart = new Date(now.getFullYear() - 1, 0, 1, 12, 0, 0);
-  }
+  // Yearly rollover boundary: Start of this year (Jan 1st at 00:00:00 local time)
+  const yearlyStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
 
   return { dailyStart, monthlyStart, yearlyStart };
 };
@@ -506,7 +486,7 @@ export default function AdminConsole({
     return {
       pendingCount,
       acceptedCount,
-      completedCount: completedToday.length,
+      completedCount: orders.filter(o => o.status === "completed").length,
       revenueToday
     };
   }, [orders]);
@@ -613,8 +593,8 @@ export default function AdminConsole({
     // Monthly history aggregation for January to December of current year
     const currentYear = new Date().getFullYear();
     const monthlyHistory = Array.from({ length: 12 }, (_, i) => {
-      const monthStart = new Date(currentYear, i, 1, 12, 0, 0);
-      const monthEnd = new Date(currentYear, i + 1, 1, 12, 0, 0);
+      const monthStart = new Date(currentYear, i, 1, 0, 0, 0, 0);
+      const monthEnd = new Date(currentYear, i + 1, 1, 0, 0, 0, 0);
 
       const monthTotal = completedOrders.filter(o => {
         try {

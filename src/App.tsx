@@ -404,7 +404,7 @@ export default function App() {
 
     // Populate and listen to active orders list (Optimized query: scan QR codes load first!)
     let unsubOrders = () => {};
-    if (isAdmin || tableId) {
+    if (isAdmin || isCustomerView || tableId) {
       // Both admin and table mode require viewing all orders to synchronize popularity state and same views
       const ordersPath = `restaurants/${restaurantId}/orders`;
       unsubOrders = onSnapshot(collection(db, "restaurants", restaurantId, "orders"), (snapshot) => {
@@ -462,7 +462,7 @@ export default function App() {
       unsubOrders();
       unsubBanner();
     };
-  }, [restaurantId, isAdmin, tableId]);
+  }, [restaurantId, isAdmin, isCustomerView, tableId]);
 
   // State handlers to update URL cleanly
   const handleSelectRestaurant = (slug: string) => {
