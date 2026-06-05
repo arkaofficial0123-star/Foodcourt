@@ -107,7 +107,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
   const [newAddress, setNewAddress] = useState("");
   const [newMobile, setNewMobile] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [newPicture, setNewPicture] = useState("");
+  const [newPicture, setNewPicture] = useState("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600");
   const [createError, setCreateError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
@@ -370,16 +370,37 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       return;
     }
 
+    if (!newEmail.trim()) {
+      setCreateError("Email address is required.");
+      return;
+    }
+
+    // Standard email pattern
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) {
+      setCreateError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!newAddress.trim()) {
+      setCreateError("Address Location is required.");
+      return;
+    }
+
+    if (!newPicture.trim()) {
+      setCreateError("Logo / Cover Image URL is required.");
+      return;
+    }
+
     setIsCreating(true);
     try {
       const restRef = doc(db, "restaurants", slugClean);
       const payload = {
         name: newName.trim().toUpperCase() || "FOODCOURT",
         password: newPassword,
-        address: newAddress.trim() || "",
+        address: newAddress.trim(),
         mobile: newMobile.trim(),
-        email: newEmail.trim() || "",
-        imageUrl: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
+        email: newEmail.trim(),
+        imageUrl: newPicture.trim(),
         createdAt: new Date().toISOString(),
         isEnabled: true
       };
@@ -411,7 +432,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       setNewAddress("");
       setNewMobile("");
       setNewEmail("");
-      setNewPicture("");
+      setNewPicture("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600");
       setSuccessCreatedMsg(`Success! Branch "${payload.name}" (ID: ${slugClean}) has been created.`);
       setActivePanel("list");
       // Auto dismiss after 2 seconds for success message
@@ -583,6 +604,26 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       return;
     }
 
+    if (!editingEmail.trim()) {
+      alert("Email address is required.");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingEmail.trim())) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+
+    if (!editingAddress.trim()) {
+      alert("Address Location is required.");
+      return;
+    }
+
+    if (!editingPicture.trim()) {
+      alert("Logo / Cover Image URL is required.");
+      return;
+    }
+
     setIsSavingEdit(true);
     try {
       if (oldId !== slugClean) {
@@ -611,7 +652,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
           address: editingAddress.trim(),
           mobile: editingMobile.trim(),
           email: editingEmail.trim(),
-          imageUrl: oldData.imageUrl || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
+          imageUrl: editingPicture.trim(),
         };
 
         // Write new parent branch document
@@ -677,6 +718,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
           address: editingAddress.trim(),
           mobile: editingMobile.trim(),
           email: editingEmail.trim(),
+          imageUrl: editingPicture.trim(),
         }, { merge: true });
 
         alert("Branch details successfully updated.");
@@ -980,9 +1022,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Email Address <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Email Address</label>
                     <input
                       type="email"
+                      required
                       placeholder="e.g. contact@shabyas.in"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
@@ -991,12 +1034,25 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Address Location <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Address Location</label>
                     <input
                       type="text"
+                      required
                       placeholder="e.g. 12 MG Road, Bengaluru, Karnataka"
                       value={newAddress}
                       onChange={(e) => setNewAddress(e.target.value)}
+                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Logo / Cover Image URL</label>
+                    <input
+                      type="url"
+                      required
+                      placeholder="e.g. https://images.unsplash.com/photo-..."
+                      value={newPicture}
+                      onChange={(e) => setNewPicture(e.target.value)}
                       className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
                     />
                   </div>
@@ -1018,7 +1074,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                         setNewAddress("");
                         setNewMobile("");
                         setNewEmail("");
-                        setNewPicture("");
+                        setNewPicture("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600");
                         setActivePanel("list");
                       }}
                       className="rounded-lg border border-zinc-900 hover:bg-zinc-900/40 px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
@@ -1282,12 +1338,33 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                                     />
                                   </div>
                                   <div className="space-y-1">
-                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Email Address <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Email Address</label>
                                     <input
                                       type="email"
                                       value={editingEmail}
                                       onChange={(e) => setEditingEmail(e.target.value)}
                                       className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Address Location</label>
+                                    <input
+                                      type="text"
+                                      value={editingAddress}
+                                      onChange={(e) => setEditingAddress(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Logo / Cover Image URL</label>
+                                    <input
+                                      type="url"
+                                      value={editingPicture}
+                                      onChange={(e) => setEditingPicture(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
+                                      required
                                     />
                                   </div>
                                 </div>
