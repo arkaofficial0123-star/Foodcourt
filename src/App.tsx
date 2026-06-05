@@ -404,40 +404,10 @@ export default function App() {
 
     // Populate and listen to active orders list (Optimized query: scan QR codes load first!)
     let unsubOrders = () => {};
-    if (isAdmin) {
-      // Admin dashboard requires viewing all orders
+    if (isAdmin || tableId) {
+      // Both admin and table mode require viewing all orders to synchronize popularity state and same views
       const ordersPath = `restaurants/${restaurantId}/orders`;
       unsubOrders = onSnapshot(collection(db, "restaurants", restaurantId, "orders"), (snapshot) => {
-        const fetched: Order[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          fetched.push({
-            id: docSnap.id,
-            tableId: d.tableId,
-            items: (d.items || []).map((item: any) => ({
-              id: item.id,
-              name: item.name,
-              price: typeof item.price === "number" ? item.price : (parseFloat(item.price) || 0),
-              quantity: item.quantity
-            })),
-            total: typeof d.total === "number" ? d.total : (parseFloat(d.total) || 0),
-            status: d.status,
-            createdAt: d.createdAt,
-            updatedAt: d.updatedAt,
-          });
-        });
-        setOrders(fetched);
-      }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, ordersPath);
-      });
-    } else if (tableId) {
-      // Customer at a specific table: only load their table's active / uncompleted orders
-      const ordersPath = `restaurants/${restaurantId}/orders`;
-      const q = query(
-        collection(db, "restaurants", restaurantId, "orders"),
-        where("tableId", "==", tableId)
-      );
-      unsubOrders = onSnapshot(q, (snapshot) => {
         const fetched: Order[] = [];
         snapshot.forEach((docSnap) => {
           const d = docSnap.data();

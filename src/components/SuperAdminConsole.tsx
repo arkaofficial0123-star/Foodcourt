@@ -442,10 +442,42 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
 
     setIsWiping(true);
     try {
-      if (restaurantToDelete.id === "foodcourt") {
+      const targetId = restaurantToDelete.id;
+      if (targetId === "foodcourt") {
         await setDoc(doc(db, "settings", "security"), { disableAutoSeed: true }, { merge: true });
       }
-      await deleteDoc(doc(db, "restaurants", restaurantToDelete.id));
+
+      // 1. Delete items subcollection
+      const itemsCol = collection(db, "restaurants", targetId, "items");
+      const itemsSnap = await getDocs(itemsCol);
+      const deleteItems = itemsSnap.docs.map(itemDoc => 
+        deleteDoc(doc(db, "restaurants", targetId, "items", itemDoc.id))
+      );
+      await Promise.all(deleteItems);
+
+      // 2. Delete categories subcollection
+      const catsCol = collection(db, "restaurants", targetId, "categories");
+      const catsSnap = await getDocs(catsCol);
+      const deleteCats = catsSnap.docs.map(catDoc => 
+        deleteDoc(doc(db, "restaurants", targetId, "categories", catDoc.id))
+      );
+      await Promise.all(deleteCats);
+
+      // 3. Delete orders subcollection
+      const ordersCol = collection(db, "restaurants", targetId, "orders");
+      const ordersSnap = await getDocs(ordersCol);
+      const deleteOrders = ordersSnap.docs.map(orderDoc => 
+        deleteDoc(doc(db, "restaurants", targetId, "orders", orderDoc.id))
+      );
+      await Promise.all(deleteOrders);
+
+      // 4. Delete settings/banner
+      const bannerRef = doc(db, "restaurants", targetId, "settings", "banner");
+      await deleteDoc(bannerRef);
+
+      // 5. Delete parent doc
+      await deleteDoc(doc(db, "restaurants", targetId));
+
       setRestaurantToDelete(null);
       setDeleteConfirmationInput("");
     } catch (err: any) {
@@ -469,7 +501,38 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
 
       const promises = restaurants.map(async (r) => {
         try {
-          await deleteDoc(doc(db, "restaurants", r.id));
+          const targetId = r.id;
+
+          // 1. Delete items
+          const itemsCol = collection(db, "restaurants", targetId, "items");
+          const itemsSnap = await getDocs(itemsCol);
+          const deleteItems = itemsSnap.docs.map(itemDoc => 
+            deleteDoc(doc(db, "restaurants", targetId, "items", itemDoc.id))
+          );
+          await Promise.all(deleteItems);
+
+          // 2. Delete categories
+          const catsCol = collection(db, "restaurants", targetId, "categories");
+          const catsSnap = await getDocs(catsCol);
+          const deleteCats = catsSnap.docs.map(catDoc => 
+            deleteDoc(doc(db, "restaurants", targetId, "categories", catDoc.id))
+          );
+          await Promise.all(deleteCats);
+
+          // 3. Delete orders
+          const ordersCol = collection(db, "restaurants", targetId, "orders");
+          const ordersSnap = await getDocs(ordersCol);
+          const deleteOrders = ordersSnap.docs.map(orderDoc => 
+            deleteDoc(doc(db, "restaurants", targetId, "orders", orderDoc.id))
+          );
+          await Promise.all(deleteOrders);
+
+          // 4. Delete banner settings
+          const bannerRef = doc(db, "restaurants", targetId, "settings", "banner");
+          await deleteDoc(bannerRef);
+
+          // 5. Delete details doc
+          await deleteDoc(doc(db, "restaurants", targetId));
         } catch (err: any) {
           handleFirestoreError(err, OperationType.DELETE, `restaurants/${r.id}`);
         }

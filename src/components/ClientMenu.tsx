@@ -76,8 +76,34 @@ export default function ClientMenu({
 
   // Dynamically prepare the category list with NO "Others" category pill
   const renderedCategories = useMemo(() => {
-    return (categories || []).filter(cat => cat.name.toLowerCase() !== "others");
-  }, [categories]);
+    // Determine the categories of items that have already been ordered across all tables
+    const orderedCategoryNames = new Set<string>();
+    (orders || []).forEach((order) => {
+      order.items.forEach((orderedItem) => {
+        // Find corresponding MenuItem to lookup its category
+        const matchedItem = (items || []).find((it) => it.id === orderedItem.id);
+        if (matchedItem?.category) {
+          orderedCategoryNames.add(matchedItem.category.toLowerCase());
+        }
+      });
+    });
+
+    return [...(categories || [])]
+      .filter(cat => cat.name.toLowerCase() !== "others")
+      .sort((a, b) => {
+        const aOrdered = orderedCategoryNames.has(a.name.toLowerCase());
+        const bOrdered = orderedCategoryNames.has(b.name.toLowerCase());
+
+        // Prioritize ordered categories first
+        if (aOrdered && !bOrdered) return -1;
+        if (!aOrdered && bOrdered) return 1;
+
+        // Fallback: newest categories first (Recent First)
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [categories, orders, items]);
 
   // Compute the top 5 most recently created items across any category to highlight new plates
   const recentlyAddedItems = useMemo(() => {
