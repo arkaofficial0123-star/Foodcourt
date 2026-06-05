@@ -386,11 +386,6 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       return;
     }
 
-    if (!newPicture.trim()) {
-      setCreateError("Logo / Cover Image URL is required.");
-      return;
-    }
-
     setIsCreating(true);
     try {
       const restRef = doc(db, "restaurants", slugClean);
@@ -616,11 +611,6 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
 
     if (!editingAddress.trim()) {
       alert("Address Location is required.");
-      return;
-    }
-
-    if (!editingPicture.trim()) {
-      alert("Logo / Cover Image URL is required.");
       return;
     }
 
@@ -1045,18 +1035,6 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Logo / Cover Image URL</label>
-                    <input
-                      type="url"
-                      required
-                      placeholder="e.g. https://images.unsplash.com/photo-..."
-                      value={newPicture}
-                      onChange={(e) => setNewPicture(e.target.value)}
-                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
-                    />
-                  </div>
-
 
 
                   {createError && (
@@ -1353,16 +1331,6 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                                       type="text"
                                       value={editingAddress}
                                       onChange={(e) => setEditingAddress(e.target.value)}
-                                      className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
-                                      required
-                                    />
-                                  </div>
-                                  <div className="space-y-1">
-                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Logo / Cover Image URL</label>
-                                    <input
-                                      type="url"
-                                      value={editingPicture}
-                                      onChange={(e) => setEditingPicture(e.target.value)}
                                       className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
                                       required
                                     />
