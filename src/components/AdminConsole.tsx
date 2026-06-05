@@ -2096,44 +2096,6 @@ export default function AdminConsole({
                     />
                   </div>
 
-                  <div className="space-y-3">
-                    <label className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Banner Backdrop Image</label>
-                    
-                    {bannerImageUrl && (
-                      <div className="relative h-28 rounded-xl overflow-hidden border border-neutral-900 bg-neutral-950">
-                        <img src={bannerImageUrl} alt="Banner Preview" className="h-full w-full object-cover brightness-50" />
-                        <button
-                          type="button"
-                          onClick={() => setBannerImageUrl("")}
-                          className="absolute top-2 right-2 rounded-full bg-neutral-950/80 p-2 text-rose-400 hover:text-rose-200 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* File upload banner input */}
-                    <div className="flex items-center justify-center w-full">
-                      <label className="flex flex-col items-center justify-center w-full h-24 border border-dashed rounded-xl border-neutral-800 bg-neutral-950/50 cursor-pointer hover:border-neutral-600 transition-all">
-                        <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                          <Upload className="h-5 w-5 text-neutral-500 mb-1" />
-                          <p className="text-xs text-neutral-400 font-sans">
-                            Click to upload banner background image
-                          </p>
-                        </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          id="form-banner-photo"
-                          className="hidden"
-                          onChange={(e) => renderBase64File(e, setBannerImageUrl)}
-                        />
-                      </label>
-                    </div>
-
-
-                  </div>
-
                   <button
                     type="submit"
                     disabled={isUpdateBannerLoading}

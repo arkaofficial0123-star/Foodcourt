@@ -37,7 +37,11 @@ import {
   Calendar,
   Sparkles,
   RefreshCw,
-  LogOut
+  LogOut,
+  Mail,
+  Phone,
+  MapPin,
+  Image as ImageIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -48,6 +52,10 @@ interface RestaurantTenant {
   createdAt: string;
   isEnabled?: boolean;
   isStaffActive?: boolean;
+  address?: string;
+  mobile?: string;
+  email?: string;
+  imageUrl?: string;
 }
 
 interface SuperAdminConsoleProps {
@@ -75,7 +83,11 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         password: r.password || "1234",
         createdAt: r.createdAt || new Date().toISOString(),
         isEnabled: r.isEnabled !== false,
-        isStaffActive: r.isStaffActive === true
+        isStaffActive: r.isStaffActive === true,
+        address: r.address || "",
+        mobile: r.mobile || "",
+        email: r.email || "",
+        imageUrl: r.imageUrl || ""
       })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
     return [];
@@ -92,6 +104,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
   const [newSlug, setNewSlug] = useState("");
   const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newMobile, setNewMobile] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPicture, setNewPicture] = useState("");
   const [createError, setCreateError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
@@ -104,13 +120,44 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
   const [globalSettingsSuccess, setGlobalSettingsSuccess] = useState("");
   const [globalSettingsError, setGlobalSettingsError] = useState("");
 
-  // Edit password state
+  // Edit fields state
   const [editingRepoId, setEditingRepoId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
   const [editingPassword, setEditingPassword] = useState("");
   const [editingSlug, setEditingSlug] = useState("");
+  const [editingAddress, setEditingAddress] = useState("");
+  const [editingMobile, setEditingMobile] = useState("");
+  const [editingEmail, setEditingEmail] = useState("");
+  const [editingPicture, setEditingPicture] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [showPasswords, setShowPasswords] = useState<{ [key: string]: boolean }>({});
   const [expandedRestaurantId, setExpandedRestaurantId] = useState<string | null>(null);
+
+  // Auto-reset all expand states & edit variables whenever active tab / panel changes or when the console is loaded/initialized.
+  useEffect(() => {
+    setExpandedRestaurantId(null);
+    setEditingRepoId(null);
+    setShowPasswords({});
+    setEditingName("");
+    setEditingPassword("");
+    setEditingSlug("");
+    setEditingAddress("");
+    setEditingMobile("");
+    setEditingEmail("");
+    setEditingPicture("");
+  }, [activePanel]);
+
+  // Clean popstate behavior: reset any opened sub-controls to lists/defaults if browser Back/Forward occurs
+  useEffect(() => {
+    const handlePopState = () => {
+      setExpandedRestaurantId(null);
+      setEditingRepoId(null);
+      setShowPasswords({});
+      setActivePanel("list");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Custom delete verification state
   const [restaurantToDelete, setRestaurantToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -203,7 +250,11 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
           password: d.password || "1234",
           createdAt: d.createdAt || new Date().toISOString(),
           isEnabled: d.isEnabled !== false,
-          isStaffActive: d.isStaffActive === true
+          isStaffActive: d.isStaffActive === true,
+          address: d.address || "",
+          mobile: d.mobile || "",
+          email: d.email || "",
+          imageUrl: d.imageUrl || ""
         });
       });
       setRestaurants(fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
@@ -297,12 +348,38 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       return;
     }
 
+    if (!newName.trim()) {
+      setCreateError("Restaurant Name is required.");
+      return;
+    }
+
+    if (!newPassword.trim()) {
+      setCreateError("Password is required.");
+      return;
+    }
+
+    if (!newMobile.trim()) {
+      setCreateError("Mobile number is required.");
+      return;
+    }
+
+    // Standard Indian mobile validation: 10 digits (6-9) optionally with +91 or 91 or 0 prefix
+    const cleanMobile = newMobile.replace(/[\s-]/g, "");
+    if (!/^(?:(?:\+|0{0,2})91)?[6789]\d{9}$/.test(cleanMobile)) {
+      setCreateError("Please enter a valid Indian mobile number (10 digits, e.g. 9876543210 or +91 9876543210).");
+      return;
+    }
+
     setIsCreating(true);
     try {
       const restRef = doc(db, "restaurants", slugClean);
       const payload = {
         name: newName.trim().toUpperCase() || "FOODCOURT",
         password: newPassword,
+        address: newAddress.trim() || "",
+        mobile: newMobile.trim(),
+        email: newEmail.trim() || "",
+        imageUrl: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
         createdAt: new Date().toISOString(),
         isEnabled: true
       };
@@ -321,7 +398,7 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         }),
         setDoc(bannerDocRef, {
           text: `Welcome to ${payload.name}! Tap dishes to populate your order sheet. Delivery directly to your table!`,
-          imageUrl: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=600",
+          imageUrl: payload.imageUrl,
           visible: true,
           updatedAt: new Date().toISOString()
         })
@@ -331,6 +408,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       setNewSlug("");
       setNewName("");
       setNewPassword("");
+      setNewAddress("");
+      setNewMobile("");
+      setNewEmail("");
+      setNewPicture("");
       setSuccessCreatedMsg(`Success! Branch "${payload.name}" (ID: ${slugClean}) has been created.`);
       setActivePanel("list");
       // Auto dismiss after 2 seconds for success message
@@ -423,6 +504,22 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
       return;
     }
 
+    if (!editingName.trim()) {
+      alert("Restaurant Name is required.");
+      return;
+    }
+
+    if (!editingMobile.trim()) {
+      alert("Mobile number is required.");
+      return;
+    }
+
+    const cleanEditingMobile = editingMobile.replace(/[\s-]/g, "");
+    if (!/^(?:(?:\+|0{0,2})91)?[6789]\d{9}$/.test(cleanEditingMobile)) {
+      alert("Please enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +91 9876543210).");
+      return;
+    }
+
     setIsSavingEdit(true);
     try {
       if (oldId !== slugClean) {
@@ -446,7 +543,12 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         const oldData = oldDocSnap.data();
         const newData = {
           ...oldData,
-          password: passwordClean
+          name: editingName.trim().toUpperCase() || oldData.name || "FOODCOURT",
+          password: passwordClean,
+          address: editingAddress.trim(),
+          mobile: editingMobile.trim(),
+          email: editingEmail.trim(),
+          imageUrl: oldData.imageUrl || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
         };
 
         // Write new parent branch document
@@ -475,7 +577,11 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         const bannerSnap = await getDoc(oldBannerRef);
         if (bannerSnap.exists()) {
           const newBannerRef = doc(db, "restaurants", slugClean, "settings", "banner");
-          await setDoc(newBannerRef, bannerSnap.data());
+          // Update dynamic banner context with new restaurant logo/picture
+          await setDoc(newBannerRef, {
+            ...bannerSnap.data(),
+            imageUrl: editingPicture.trim() || bannerSnap.data().imageUrl
+          });
         }
 
         // 5. Delete all old documents (subcollection docs + main doc)
@@ -499,13 +605,18 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
         // Delete old parent doc
         await deleteDoc(oldDocRef);
 
-        alert(`Successfully updated User ID to "${slugClean}" and passcode.`);
+        alert(`Successfully updated "${editingName}" slug access and details.`);
       } else {
-        // Only Password was changed (or remained identical)
+        // Slug remained identical, perform inline details merge
         await setDoc(doc(db, "restaurants", oldId), {
-          password: passwordClean
+          name: editingName.trim().toUpperCase() || "FOODCOURT",
+          password: passwordClean,
+          address: editingAddress.trim(),
+          mobile: editingMobile.trim(),
+          email: editingEmail.trim(),
         }, { merge: true });
-        alert("Passcode successfully updated.");
+
+        alert("Branch details successfully updated.");
       }
 
       setEditingRepoId(null);
@@ -750,50 +861,84 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
             >
               <div className="rounded-2xl border border-zinc-900 bg-zinc-950 p-6 space-y-6 shadow-2xl">
                 <div className="space-y-1">
-                  <h3 className="font-serif italic text-xl text-white">Create Restaurants</h3>
-                  <p className="text-zinc-500 text-xs font-sans">Initialize a brand new business branch with its unique credentials</p>
+                  <h3 className="font-serif italic text-xl text-white">Create Restaurant Branch</h3>
+                  <p className="text-zinc-500 text-xs font-sans">Initialize a brand new business branch with comprehensive details and credentials</p>
                 </div>
 
-                <form onSubmit={handleCreateRestaurant} className="space-y-4">
+                <form onSubmit={handleCreateRestaurant} className="space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">company name</label>
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Restaurant Name</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Downtown Foodcourt"
+                        placeholder="e.g. Downtown Gourmet"
                         value={newName}
                         onChange={(e) => handleCompanyNameChange(e.target.value)}
-                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-sans transition-all"
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-sans transition-all"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">username ID</label>
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Username ID (Slug)</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. foodcourt"
+                        placeholder="e.g. downtown"
                         value={newSlug}
                         onChange={(e) => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
-                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-mono transition-all"
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 font-mono transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Password</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. secret123"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Mobile No</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 9876543210"
+                        value={newMobile}
+                        onChange={(e) => setNewMobile(e.target.value)}
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">password</label>
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Email Address <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
+                    <input
+                      type="email"
+                      placeholder="e.g. contact@shabyas.in"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">Address Location <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
                     <input
                       type="text"
-                      required
-                      placeholder="Enter local staff log-in password..."
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
+                      placeholder="e.g. 12 MG Road, Bengaluru, Karnataka"
+                      value={newAddress}
+                      onChange={(e) => setNewAddress(e.target.value)}
+                      className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 transition-all"
                     />
-                    <p className="text-[10px] text-zinc-500 font-sans mt-2">
-                      Used for the branch landing login. The slug URL will be: <code className="text-amber-500 font-mono bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-900 text-[10px]">/restaurant/{newSlug || "slug"}</code>
-                    </p>
                   </div>
+
+
 
                   {createError && (
                     <p className="text-xs text-rose-455 font-sans bg-rose-500/10 border border-rose-900/60 px-3 py-2 rounded-lg">{createError}</p>
@@ -807,6 +952,10 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                         setNewName("");
                         setNewSlug("");
                         setNewPassword("");
+                        setNewAddress("");
+                        setNewMobile("");
+                        setNewEmail("");
+                        setNewPicture("");
                         setActivePanel("list");
                       }}
                       className="rounded-lg border border-zinc-900 hover:bg-zinc-900/40 px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer text-zinc-400 hover:text-white"
@@ -1015,131 +1164,207 @@ export default function SuperAdminConsole({ onBackToMain, onLaunchLocalBranch, a
                           <motion.div 
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
-                            className="mt-4 pt-4 border-t border-zinc-900/60 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                            className="mt-4 pt-4 border-t border-zinc-900/60 w-full"
                           >
-                            {/* Left details info & permission button */}
-                            <div className="space-y-4">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs uppercase tracking-wider text-zinc-400 font-mono font-bold">Branch ID:</span>
-                                <span className="rounded bg-zinc-950 px-2.5 py-1 border border-zinc-900 font-mono text-[10px] text-zinc-300 uppercase tracking-widest font-semibold">
-                                  {restaurant.id}
-                                </span>
-                              </div>
-                              
-                              <div className="flex flex-col gap-1.5 border-t border-zinc-900/40 pt-3">
-                                <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Access Permission:</span>
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    try {
-                                      await setDoc(doc(db, "restaurants", restaurant.id), {
-                                        isEnabled: !restaurant.isEnabled
-                                      }, { merge: true });
-                                    } catch (err: any) {
-                                      alert("Failed to update status: " + err.message);
-                                    }
-                                  }}
-                                  className={`flex items-center gap-2 rounded-xl text-[10px] font-mono font-bold uppercase border px-3 py-1.5 transition-all self-start cursor-pointer active:scale-95 ${
-                                    restaurant.isEnabled 
-                                      ? "bg-emerald-950/20 border-emerald-900/60 text-emerald-400 hover:bg-emerald-950/40" 
-                                      : "bg-rose-950/20 border-rose-900/60 text-rose-455 hover:bg-rose-955/40"
-                                  }`}
-                                >
-                                  <span className={`h-2 w-2 rounded-full ${restaurant.isEnabled ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
-                                  <span>Permission: {restaurant.isEnabled ? "ON" : "OFF"}</span>
-                                </button>
-                              </div>
-                            </div>
+                            {editingRepoId === restaurant.id ? (
+                              /* Inline Editing Mode Card Form */
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-zinc-300 bg-zinc-950/40 border border-zinc-900/80 p-5 rounded-2xl shadow-xl font-sans">
+                                {/* Edit Identity */}
+                                <div className="space-y-3.5">
+                                  <h4 className="font-mono text-[9px] uppercase tracking-wider text-amber-500 font-bold">Edit Brand Identity</h4>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Restaurant Name</label>
+                                    <input
+                                      type="text"
+                                      value={editingName}
+                                      onChange={(e) => setEditingName(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full font-semibold outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Access ID (Slug / Username)</label>
+                                    <input
+                                      type="text"
+                                      value={editingSlug}
+                                      onChange={(e) => setEditingSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
+                                      className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full font-mono font-bold outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                      title="Changing this ID migrates access credentials to the new URL."
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-505">Secret Passkey</label>
+                                    <input
+                                      type="text"
+                                      value={editingPassword}
+                                      onChange={(e) => setEditingPassword(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full font-mono font-bold outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                    />
+                                  </div>
+                                </div>
 
-                             {/* Middle Actions: PASSWORD & USER ID MANAGEMENT */}
-                             <div className="flex items-start gap-3 bg-zinc-950/40 p-3 rounded-xl border border-zinc-900 max-w-sm w-full md:w-auto">
-                               <div className="flex-1 min-w-[140px] space-y-2.5">
-                                 <div>
-                                   <span className="font-mono text-[8px] uppercase tracking-widest text-amber-500 font-bold block">Exact User ID</span>
-                                   {editingRepoId === restaurant.id ? (
-                                     <input
-                                       type="text"
-                                       value={editingSlug}
-                                       onChange={(e) => setEditingSlug(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
-                                       className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-2 py-1 rounded w-full font-mono font-bold mt-1 outline-none"
-                                       placeholder="e.g. foodcourt"
-                                       required
-                                     />
-                                   ) : (
-                                     <span className="font-mono text-xs font-extrabold text-[#ffffff] tracking-wider select-all block mt-0.5">
-                                       {restaurant.id}
-                                     </span>
-                                   )}
-                                 </div>
-                                 <div className="border-t border-zinc-900/40 pt-2">
-                                   <span className="font-mono text-[8px] uppercase tracking-widest text-zinc-500 block">Secret Passkey</span>
-                                   
-                                   {editingRepoId === restaurant.id ? (
-                                     <input
-                                       type="text"
-                                       value={editingPassword}
-                                       onChange={(e) => setEditingPassword(e.target.value)}
-                                       className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-2 py-1 rounded w-full font-mono font-bold mt-1 outline-none"
-                                     />
-                                   ) : (
-                                     <p className="font-mono text-xs font-bold text-zinc-300 tracking-wider mt-1">
-                                       {showPasswords[restaurant.id] ? restaurant.password : "• • • • • • •"}
-                                     </p>
-                                   )}
-                                 </div>
-                               </div>
- 
-                               <div className="flex items-center gap-1.5 font-sans">
-                                 <button
-                                   onClick={() => togglePasswordVisibility(restaurant.id)}
-                                   className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-                                   title="Show / Hide Password"
-                                 >
-                                   {showPasswords[restaurant.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                 </button>
-                                 
-                                 {editingRepoId === restaurant.id ? (
-                                   <button
-                                     onClick={() => handleSaveBranchSettings(restaurant.id)}
-                                     disabled={isSavingEdit}
-                                     className="p-1 px-2.5 rounded bg-emerald-600 font-mono text-[9px] font-bold text-white uppercase hover:bg-emerald-700 transition cursor-pointer disabled:opacity-40"
-                                   >
-                                     {isSavingEdit ? "..." : "Save"}
-                                   </button>
-                                 ) : (
-                                   <button
-                                     onClick={(e) => {
-                                       e.stopPropagation();
-                                       setEditingRepoId(restaurant.id);
-                                       setEditingPassword(restaurant.password || "");
-                                       setEditingSlug(restaurant.id);
-                                     }}
-                                     className="p-1 px-2 border border-zinc-800 rounded font-mono text-[9px] text-zinc-400 uppercase hover:text-white transition cursor-pointer"
-                                   >
-                                     Edit
-                                   </button>
-                                 )}
-                               </div>
-                             </div>
+                                {/* Edit Contacts & Location */}
+                                <div className="space-y-3.5">
+                                  <h4 className="font-mono text-[9px] uppercase tracking-wider text-amber-500 font-bold">Edit Address & Contacts</h4>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Mobile No</label>
+                                    <input
+                                      type="text"
+                                      value={editingMobile}
+                                      onChange={(e) => setEditingMobile(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="font-mono text-[8px] uppercase tracking-wider text-zinc-500">Email Address <span className="text-zinc-600 font-sans italic lowercase">(Optional)</span></label>
+                                    <input
+                                      type="email"
+                                      value={editingEmail}
+                                      onChange={(e) => setEditingEmail(e.target.value)}
+                                      className="bg-zinc-950 border border-zinc-805 text-xs text-zinc-150 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors"
+                                    />
+                                  </div>
+                                </div>
 
-                            {/* Right Action buttons */}
-                            <div className="flex items-center gap-4 self-end md:self-auto font-sans">
-                              <button
-                                onClick={() => handleLaunchLocalBranch(restaurant.id)}
-                                className="flex items-center gap-1.5 rounded-xl bg-zinc-100 text-black px-4 py-2.5 text-xs font-bold uppercase tracking-wider hover:bg-zinc-200 transition-all active:scale-95 cursor-pointer"
-                              >
-                                <Store className="h-3.5 w-3.5" />
-                                <span>Launch Staff Panel</span>
-                              </button>
-                              
-                              <button
-                                onClick={() => handleDeleteRestaurant(restaurant.id, restaurant.name)}
-                                className="p-2.5 rounded-xl border border-zinc-900 bg-transparent text-zinc-650 hover:text-rose-500 hover:border-rose-95 transition-colors cursor-pointer"
-                                title="Delete Tenant Instance"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                                {/* Column 3: Actions */}
+                                <div className="flex flex-col justify-end">
+                                  <div className="flex gap-2.5 pt-4 justify-end font-sans">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingRepoId(null)}
+                                      className="rounded-lg border border-zinc-900 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-900/30 transition cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveBranchSettings(restaurant.id)}
+                                      disabled={isSavingEdit}
+                                      className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black px-5 py-2 text-[10px] font-bold uppercase tracking-wider shadow-md active:scale-95 disabled:opacity-40 transition cursor-pointer"
+                                    >
+                                      {isSavingEdit ? "...Saving" : "Save Details"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Stunning Bento-Like Detail View Mode */
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-zinc-300 bg-zinc-950/20 border border-zinc-900/50 p-5 rounded-2xl shadow-lg font-sans">
+                                {/* Identity & Info */}
+                                <div className="space-y-4 flex flex-col justify-between">
+                                  <div>
+                                    <span className="font-mono text-[8px] uppercase tracking-widest text-zinc-550 font-bold block mb-1">Restaurant Name</span>
+                                    <h3 className="font-serif italic text-lg text-white font-extrabold tracking-wide drop-shadow-md">{restaurant.name}</h3>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] uppercase font-mono text-zinc-550 font-bold">Branch Slug:</span>
+                                      <span className="font-mono text-xs font-bold text-zinc-300 select-all tracking-wider px-1.5 py-0.5 rounded bg-zinc-955 border border-zinc-900">{restaurant.id}</span>
+                                    </div>
+                                    <div className="text-[10px] font-mono text-zinc-550">
+                                      Created {new Date(restaurant.createdAt).toLocaleDateString()}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Contact & location info card */}
+                                <div className="space-y-3 lg:border-x lg:border-zinc-900/50 lg:px-6">
+                                  <h4 className="font-mono text-[9px] uppercase tracking-wider text-amber-500 font-bold flex items-center gap-1.5">Contact Details</h4>
+                                  <div className="space-y-2.5 text-xs">
+                                    <div className="flex items-start gap-2.5 text-zinc-400">
+                                      <MapPin className="h-4 w-4 text-zinc-650 shrink-0 mt-0.5" />
+                                      <span className="leading-tight text-zinc-300" title={restaurant.address}>
+                                        {restaurant.address || "Main Street, Foodcourt Hub"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 text-zinc-400">
+                                      <Phone className="h-4 w-4 text-zinc-650 shrink-0" />
+                                      <span className="font-mono text-zinc-300">{restaurant.mobile || "+1-234-567-890"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 text-zinc-400">
+                                      <Mail className="h-4 w-4 text-zinc-650 shrink-0" />
+                                      <span className="text-zinc-300 truncate" title={restaurant.email}>{restaurant.email || "contact@foodcourt.com"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Controls & credentials panel */}
+                                <div className="space-y-4 flex flex-col justify-between">
+                                  <div>
+                                    <span className="font-mono text-[8px] uppercase tracking-widest text-zinc-500 font-bold block">Terminal Passcode</span>
+                                    <div className="flex items-center gap-2.5 mt-1.5 bg-zinc-955 px-3 py-2 border border-zinc-900 rounded-lg self-start">
+                                      <span className="font-mono text-xs font-bold text-zinc-300 tracking-wider">
+                                        {showPasswords[restaurant.id] ? restaurant.password : "• • • • • • •"}
+                                      </span>
+                                      <button
+                                        onClick={() => togglePasswordVisibility(restaurant.id)}
+                                        className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                                      >
+                                        {showPasswords[restaurant.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-zinc-900/60 font-sans">
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await setDoc(doc(db, "restaurants", restaurant.id), {
+                                            isEnabled: !restaurant.isEnabled
+                                          }, { merge: true });
+                                        } catch (err: any) {
+                                          alert("Failed to update: " + err.message);
+                                        }
+                                      }}
+                                      className={`flex items-center gap-1.5 rounded-lg text-[9.5px] font-mono font-bold uppercase border px-2.5 py-1.5 transition-all self-start cursor-pointer active:scale-95 ${
+                                        restaurant.isEnabled 
+                                          ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-400 hover:bg-emerald-950/45" 
+                                          : "bg-rose-955/20 border-rose-900/40 text-rose-455 hover:bg-rose-955/35"
+                                      }`}
+                                    >
+                                      <span className={`h-1.5 w-1.5 rounded-full ${restaurant.isEnabled ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
+                                      <span>Permission: {restaurant.isEnabled ? "ON" : "OFF"}</span>
+                                    </button>
+
+                                    <button
+                                      onClick={() => {
+                                        setEditingRepoId(restaurant.id);
+                                        setEditingName(restaurant.name || "");
+                                        setEditingPassword(restaurant.password || "1234");
+                                        setEditingSlug(restaurant.id);
+                                        setEditingAddress(restaurant.address || "Main Street, Foodcourt Hub");
+                                        setEditingMobile(restaurant.mobile || "+1-234-567-890");
+                                        setEditingEmail(restaurant.email || "contact@foodcourt.com");
+                                        setEditingPicture(restaurant.imageUrl || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600");
+                                      }}
+                                      className="px-3 py-1.5 border border-zinc-800 hover:border-zinc-700 hover:text-white rounded-lg text-[9.5px] font-mono font-bold uppercase tracking-wider text-zinc-400 transition active:scale-95 cursor-pointer"
+                                    >
+                                      Edit
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleLaunchLocalBranch(restaurant.id)}
+                                      className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-black rounded-lg text-[9.5px] font-mono font-bold uppercase tracking-wider transition active:scale-95 cursor-pointer flex items-center gap-1"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      <span>Launch</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRestaurant(restaurant.id, restaurant.name)}
+                                      className="p-1.5 border border-zinc-900 hover:border-rose-900 hover:text-rose-500 rounded-lg text-zinc-650 transition active:scale-95 cursor-pointer flex items-center justify-center"
+                                      title="Delete Branch"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </motion.div>
                         )}
                       </div>

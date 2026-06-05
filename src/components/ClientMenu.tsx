@@ -90,7 +90,9 @@ export default function ClientMenu({
   // Filter items in real time based on search query and active category, sorting ordered items first
   const filteredItems = useMemo(() => {
     const rawFiltered = (items || []).filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesName = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = matchesName || matchesCategory;
       if (!matchesSearch) return false;
 
       if (selectedCategory === "All") {
@@ -405,13 +407,20 @@ export default function ClientMenu({
           </div>
         ) : (
           <motion.div 
+            key={selectedCategory}
             variants={{
-              hidden: { opacity: 0 },
-              visible: { opacity: 1, transition: { staggerChildren: 0.04 } }
+              hidden: { opacity: 0, y: 15 },
+              visible: { 
+                opacity: 1, 
+                y: 0, 
+                transition: { 
+                  duration: 0.5, 
+                  ease: [0.25, 1, 0.5, 1] 
+                } 
+              }
             }}
             initial="hidden"
             animate="visible"
-            layout
             className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4" 
             id="dishes-grid"
           >
@@ -419,10 +428,6 @@ export default function ClientMenu({
               <motion.div 
                 key={item.id} 
                 id={`menu-item-card-${item.id}`}
-                variants={{
-                  hidden: { opacity: 0, y: 20, scale: 0.95 },
-                  visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 260, damping: 20 } }
-                }}
                 whileHover={{ y: -6, transition: { duration: 0.2 } }}
                 className="bg-zinc-900/40 border border-zinc-800/40 rounded-2xl p-3 sm:p-4 flex flex-col group transition-all duration-300 hover:border-zinc-700/60 shadow-lg"
               >
