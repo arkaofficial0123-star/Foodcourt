@@ -342,7 +342,7 @@ export default function ClientMenu({
   return (
     <div className="min-h-screen bg-neutral-950 pb-36 text-neutral-100 flex flex-col" id="client-menu-view">
       {/* Dynamic Subheader/Table identifier */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-8 py-3 backdrop-blur-md">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-zinc-800/50 bg-[#0a0a0a]/90 px-4 sm:px-6 md:px-8 py-3 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <div 
@@ -378,7 +378,7 @@ export default function ClientMenu({
       <Banner settings={bannerSettings} />
 
       {/* Menu / Items Workspace */}
-      <main className="mx-auto w-full max-w-5xl px-8 flex-grow">
+      <main className="mx-auto w-full max-w-5xl px-4 sm:px-6 md:px-8 flex-grow">
         {/* Real-time search */}
         <div className="relative mb-2 mt-2">
           <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-zinc-500">
@@ -497,7 +497,7 @@ export default function ClientMenu({
             }}
             initial="hidden"
             animate="visible"
-            className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4" 
+            className="grid grid-cols-2 gap-3 sm:gap-6 md:grid-cols-4" 
             id="dishes-grid"
           >
             {filteredItems.map((item) => (
@@ -554,7 +554,7 @@ export default function ClientMenu({
             initial={{ y: 200, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 200, opacity: 0 }}
-            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-[36px] py-6 px-10 shadow-[0_-15px_40px_rgba(0,0,0,0.4)] text-zinc-950 border-t border-zinc-100"
+            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-[36px] py-6 px-4 sm:px-8 md:px-10 shadow-[0_-15px_40px_rgba(0,0,0,0.4)] text-zinc-950 border-t border-zinc-100"
             id="persistent-order-bar"
           >
             <div className="mx-auto max-w-3xl space-y-4">
@@ -624,7 +624,7 @@ export default function ClientMenu({
                   onClick={handlePlaceOrder}
                   disabled={isPlacingOrder}
                   id="order-now-button"
-                  className="flex flex-grow items-center justify-center gap-3 rounded-2xl bg-zinc-950 py-4 px-12 font-sans text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-zinc-800 disabled:opacity-50 active:scale-[0.98] cursor-pointer shadow-lg shadow-zinc-950/20"
+                  className="flex flex-grow items-center justify-center gap-3 rounded-2xl bg-zinc-950 py-3.5 px-6 md:px-12 font-sans text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-zinc-800 disabled:opacity-50 active:scale-[0.98] cursor-pointer shadow-lg shadow-zinc-950/20"
                 >
                   <Send className="h-4 w-4 shrink-0" />
                   <span>{isPlacingOrder ? "Placing Order..." : "ORDER NOW"}</span>

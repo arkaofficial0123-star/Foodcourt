@@ -42,7 +42,7 @@ export default function Banner({ settings }: BannerProps) {
 
         {/* Bio text formatted and placed cleanly directly under the banner container */}
         {showBioText && (
-          <div className="w-full px-8 pt-4 pb-0 flex flex-col items-start gap-1" id="banner-bio-text-container">
+          <div className="w-full px-4 sm:px-6 md:px-8 pt-4 pb-0 flex flex-col items-start gap-1" id="banner-bio-text-container">
             <p className="font-sans text-xs sm:text-xs text-zinc-400 leading-relaxed font-semibold max-w-3xl text-left">
               {settings.text || "Welcome to our digital menu. Place your order directly below!"}
             </p>
