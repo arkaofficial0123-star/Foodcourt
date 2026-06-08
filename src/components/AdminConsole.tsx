@@ -124,6 +124,10 @@ export default function AdminConsole({
   const [wipeItemsFeedback, setWipeItemsFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [wipeCategoriesFeedback, setWipeCategoriesFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [wipeOrdersFeedback, setWipeOrdersFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [analyticsResetAt, setAnalyticsResetAt] = useState<string>("");
+  const [showConfirmResetAnalytics, setShowConfirmResetAnalytics] = useState(false);
+  const [isResettingAnalytics, setIsResettingAnalytics] = useState(false);
+  const [resetAnalyticsFeedback, setResetAnalyticsFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isStaffActive, setIsStaffActive] = useState<boolean>(true);
   const [upiIdInput, setUpiIdInput] = useState(upiId || "");
   const [isUpdatingUpiId, setIsUpdatingUpiId] = useState(false);
@@ -157,6 +161,12 @@ export default function AdminConsole({
     setShowConfirmWipeCategories(false);
     setShowConfirmWipeOrders(false);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!upiEnabled && orderFilter === "upi") {
+      setOrderFilter("pending");
+    }
+  }, [upiEnabled, orderFilter]);
 
   const handleSaveUpiId = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -234,6 +244,35 @@ export default function AdminConsole({
     }
   };
 
+  const handleResetAnalytics = async () => {
+    setIsResettingAnalytics(true);
+    setResetAnalyticsFeedback(null);
+    try {
+      const nowISO = new Date().toISOString();
+      await updateDoc(doc(db, "restaurants", restaurantId || "foodcourt"), {
+        analyticsResetAt: nowISO
+      });
+      setResetAnalyticsFeedback({
+        type: "success",
+        text: "Success: All analytics metrics have been reset successfully."
+      });
+      setShowConfirmResetAnalytics(false);
+      setTimeout(() => {
+        setResetAnalyticsFeedback(null);
+      }, 2000);
+    } catch (err: any) {
+      setResetAnalyticsFeedback({
+        type: "error",
+        text: "Error resetting analytics: " + (err.message || String(err))
+      });
+      setTimeout(() => {
+        setResetAnalyticsFeedback(null);
+      }, 2000);
+    } finally {
+      setIsResettingAnalytics(false);
+    }
+  };
+
   const fetchPasswordsAndCheckSession = async () => {
     try {
       if (restaurantId) {
@@ -289,6 +328,7 @@ export default function AdminConsole({
         const d = snap.data();
         setCurrentStaffPassword(d.password || "1234");
         setIsStaffActive(d.isStaffActive === true);
+        setAnalyticsResetAt(d.analyticsResetAt || "");
       }
     });
     return unsub;
@@ -528,10 +568,18 @@ export default function AdminConsole({
 
   // Statistics trackers
   const stats = useMemo(() => {
-    const { dailyStart } = getCurrentRolloverTimes();
+    const { dailyStart, monthlyStart } = getCurrentRolloverTimes();
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const acceptedCount = orders.filter(o => o.status === "accepted").length;
-    const upiCount = orders.filter(o => o.paymentMode === "UPI").length;
+    
+    const upiCount = orders.filter(o => {
+      if (o.paymentMode !== "UPI") return false;
+      try {
+        return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+      } catch (err) {
+        return false;
+      }
+    }).length;
     
     const completedToday = orders.filter(o => {
       if (o.status !== "completed") return false;
@@ -555,10 +603,16 @@ export default function AdminConsole({
 
   // Order sorting: newest first for pending/accepted, completed newest first
   const sortedAndFilteredOrders = useMemo(() => {
+    const { monthlyStart } = getCurrentRolloverTimes();
     return orders
       .filter(o => {
         if (orderFilter === "upi") {
-          return o.paymentMode === "UPI";
+          if (o.paymentMode !== "UPI") return false;
+          try {
+            return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          } catch (err) {
+            return false;
+          }
         }
         return o.status === orderFilter;
       })
@@ -568,7 +622,19 @@ export default function AdminConsole({
   // Analytics calculations and trends analysis
   const analytics = useMemo(() => {
     const { dailyStart, monthlyStart, yearlyStart } = getCurrentRolloverTimes();
-    const completedOrders = orders.filter(o => o.status === "completed");
+    const resetTime = analyticsResetAt ? new Date(analyticsResetAt).getTime() : 0;
+
+    const completedOrders = orders.filter(o => {
+      if (o.status !== "completed") return false;
+      if (resetTime) {
+        try {
+          return new Date(o.createdAt).getTime() >= resetTime;
+        } catch (e) {
+          return false;
+        }
+      }
+      return true;
+    });
 
     // Revenue aggregations matching 12:00 PM rollover segments
     const revenueToday = completedOrders
@@ -671,7 +737,11 @@ export default function AdminConsole({
       }
       tablePerformance[o.tableId].count++;
       if (o.status === "completed") {
-        tablePerformance[o.tableId].total += o.total;
+        const orderTime = new Date(o.createdAt).getTime();
+        const afterReset = resetTime ? orderTime >= resetTime : true;
+        if (afterReset) {
+          tablePerformance[o.tableId].total += o.total;
+        }
       }
     });
 
@@ -717,7 +787,7 @@ export default function AdminConsole({
       currentYear,
       historyYearlyTotal
     };
-  }, [orders, items]);
+  }, [orders, items, analyticsResetAt]);
 
   // Handle uploading photos to Base64 (lightweight, zero-auth required)
   const renderBase64File = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
@@ -1255,16 +1325,18 @@ export default function AdminConsole({
                   COMPLETED ({stats.completedCount})
                   {orderFilter === "completed" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-200" />}
                 </button>
-                <button
-                  onClick={() => setOrderFilter("upi")}
-                  id="filter-upi"
-                  className={`relative font-sans text-xs font-semibold uppercase tracking-wider pb-2 transition-all cursor-pointer ${
-                    orderFilter === "upi" ? "text-rose-400 font-bold" : "text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  UPI HISTORY ({stats.upiCount})
-                  {orderFilter === "upi" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500" />}
-                </button>
+                {upiEnabled && (
+                  <button
+                    onClick={() => setOrderFilter("upi")}
+                    id="filter-upi"
+                    className={`relative font-sans text-xs font-semibold uppercase tracking-wider pb-2 transition-all cursor-pointer ${
+                      orderFilter === "upi" ? "text-rose-400 font-bold" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    UPI HISTORY ({stats.upiCount})
+                    {orderFilter === "upi" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500" />}
+                  </button>
+                )}
               </div>
 
               {/* Orders Listing */}
@@ -1283,14 +1355,14 @@ export default function AdminConsole({
                         Total UPI Orders: {stats.upiCount}
                       </span>
                       <span className="rounded-lg bg-rose-950/20 border border-rose-900/35 px-2.5 py-1 font-mono text-[10px] text-rose-350">
-                        Completed UPI: ₹{orders.filter(o => o.paymentMode === "UPI" && o.status === "completed").reduce((sum, o) => sum + o.total, 0).toFixed(2)}
+                        Completed UPI: ₹{sortedAndFilteredOrders.filter(o => o.status === "completed").reduce((sum, o) => sum + o.total, 0).toFixed(2)}
                       </span>
                     </div>
                   </div>
 
-                  {orders.filter(o => o.paymentMode === "UPI").length === 0 ? (
+                  {sortedAndFilteredOrders.length === 0 ? (
                     <div className="text-center py-12 text-zinc-500 text-xs border border-dashed border-zinc-800/40 rounded-xl bg-zinc-950/10 animate-fadeIn">
-                      No UPI transactions recorded yet.
+                      No UPI transactions recorded yet for this month.
                     </div>
                   ) : (
                     <div className="overflow-x-auto rounded-xl border border-zinc-800/40 bg-[#080808]/70">
@@ -1305,10 +1377,7 @@ export default function AdminConsole({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-850/40 font-sans">
-                          {orders
-                            .filter(o => o.paymentMode === "UPI")
-                            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                            .map((order) => {
+                          {sortedAndFilteredOrders.map((order) => {
                               const dateObj = new Date(order.createdAt);
                               const formattedTime = dateObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "numeric", hour12: true });
                               const formattedDate = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -2556,6 +2625,59 @@ export default function AdminConsole({
                       </div>
                     )}
                   </div>
+
+                  {/* Card 4: RESET ANALYTICS */}
+                  <div className="rounded-2xl border border-red-955 bg-rose-955/5 p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-neutral-200">
+                          RESET ANALYTICS
+                        </h4>
+                        <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
+                          Instantly reset Today's, Monthly, Yearly, Monthly UPI, and Monthly Cash revenue analytics to ₹0.
+                        </p>
+                      </div>
+                    </div>
+
+                    {resetAnalyticsFeedback && (
+                      <div className={`p-2.5 rounded-lg text-[10px] font-sans ${
+                        resetAnalyticsFeedback.type === "success" 
+                          ? "bg-emerald-950/25 border border-emerald-905 text-emerald-400" 
+                          : "bg-rose-950/25 border border-rose-905 text-rose-450"
+                      }`}>
+                        {resetAnalyticsFeedback.text}
+                      </div>
+                    )}
+
+                    {!showConfirmResetAnalytics ? (
+                      <button
+                        onClick={() => {
+                          setShowConfirmResetAnalytics(true);
+                          setResetAnalyticsFeedback(null);
+                        }}
+                        className="w-full rounded-xl bg-red-950/15 border border-red-900 text-red-400 font-sans text-xs font-bold uppercase tracking-wider py-2.5 transition-all hover:bg-neutral-905 active:scale-95 cursor-pointer"
+                      >
+                        Reset Analytics
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <button
+                          onClick={handleResetAnalytics}
+                          disabled={isResettingAnalytics}
+                          className="w-full rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans text-xs font-bold uppercase tracking-wider py-2 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                        >
+                          {isResettingAnalytics ? "Resetting..." : "⚠️ CONFIRM RESET"}
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmResetAnalytics(false)}
+                          disabled={isResettingAnalytics}
+                          className="w-full rounded-xl bg-transparent border border-zinc-800 hover:border-zinc-700 text-zinc-400 font-sans text-xs font-bold uppercase py-1.5 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -2571,7 +2693,7 @@ export default function AdminConsole({
               className="space-y-8"
             >
               {/* KPI Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="analytics-kpi-grid">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 ${upiEnabled ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`} id="analytics-kpi-grid">
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
                   <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">MONTHLY REVENUE</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
@@ -2582,15 +2704,19 @@ export default function AdminConsole({
                   <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.totalRevenue.toFixed(2)}</p>
                 </div>
 
-                <div className="rounded-2xl border border-rose-950/40 bg-rose-950/15 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-rose-400 font-bold">MONTHLY UPI REVENUE</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-rose-400 font-extrabold">₹{analytics.monthlyUpiRevenue.toFixed(2)}</p>
-                </div>
+                {upiEnabled && (
+                  <>
+                    <div className="rounded-2xl border border-rose-950/40 bg-rose-950/15 p-5">
+                      <span className="font-sans text-[10px] uppercase tracking-widest text-rose-400 font-bold">MONTHLY UPI REVENUE</span>
+                      <p className="mt-1 font-mono text-2xl font-bold text-rose-400 font-extrabold">₹{analytics.monthlyUpiRevenue.toFixed(2)}</p>
+                    </div>
 
-                <div className="rounded-2xl border border-emerald-950/40 bg-emerald-950/15 p-5">
-                  <span className="font-sans text-[10px] uppercase tracking-widest text-emerald-400 font-bold">MONTHLY CASH REVENUE</span>
-                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.monthlyCashRevenue.toFixed(2)}</p>
-                </div>
+                    <div className="rounded-2xl border border-emerald-950/40 bg-emerald-950/15 p-5">
+                      <span className="font-sans text-[10px] uppercase tracking-widest text-emerald-400 font-bold">MONTHLY CASH REVENUE</span>
+                      <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.monthlyCashRevenue.toFixed(2)}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Middle Section: Best Sellers and Table Performance */}
