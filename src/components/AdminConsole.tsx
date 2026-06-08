@@ -10,7 +10,7 @@ import {
   Plus, Edit2, Trash2, Eye, EyeOff, Upload, 
   IndianRupee, CheckCircle2, ShoppingBag, EyeIcon, Search,
   BarChart3, TrendingUp, LogOut, Users, Award, Clock,
-  ShieldCheck, AlertTriangle, PlusCircle, ChevronLeft, ImagePlus, X
+  ShieldCheck, AlertTriangle, PlusCircle, ChevronLeft, ImagePlus, X, CreditCard
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType, auth } from "../firebase";
@@ -27,6 +27,9 @@ interface AdminConsoleProps {
   restaurantName?: string;
   onBackToSuperAdmin?: () => void;
   onLogoutToLogin?: () => void;
+  upiPermitted?: boolean;
+  upiId?: string;
+  upiEnabled?: boolean;
 }
 
 const formatItemName = (name: string): string => {
@@ -82,10 +85,13 @@ export default function AdminConsole({
   restaurantId = null,
   restaurantName = "Foodcourt",
   onBackToSuperAdmin,
-  onLogoutToLogin
+  onLogoutToLogin,
+  upiPermitted = false,
+  upiId = "",
+  upiEnabled = false,
 }: AdminConsoleProps) {
   const [activeTab, setActiveTab] = useState<"orders" | "items" | "settings" | "analytics">("orders");
-  const [orderFilter, setOrderFilter] = useState<"pending" | "accepted" | "completed">("pending");
+  const [orderFilter, setOrderFilter] = useState<"pending" | "accepted" | "completed" | "upi">("pending");
 
   // Auth & Dual Password Session Management Model
   const [currentRole, setCurrentRole] = useState<"guest" | "staff" | "superadmin">(() => {
@@ -119,6 +125,55 @@ export default function AdminConsole({
   const [wipeCategoriesFeedback, setWipeCategoriesFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [wipeOrdersFeedback, setWipeOrdersFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isStaffActive, setIsStaffActive] = useState<boolean>(true);
+  const [upiIdInput, setUpiIdInput] = useState(upiId || "");
+  const [isUpdatingUpiId, setIsUpdatingUpiId] = useState(false);
+
+  useEffect(() => {
+    setUpiIdInput(upiId || "");
+  }, [upiId]);
+
+  useEffect(() => {
+    // Automatically reset all transient inputs, form fields, editing status, searches, and alerts to default on tab change
+    setItemName("");
+    setItemPrice("");
+    setItemImageUrl("");
+    setEditingItem(null);
+    setEditingDishId(null);
+    setEditingDishName("");
+    setEditingDishPrice("");
+    setAdminItemsSearchQuery("");
+    setNewCategoryName("");
+    setNewCategoryImageUrl("");
+    setSelectedManageCategory(null);
+    setBatchDishes([]);
+    setNewStaffPassword("");
+    setNewSuperAdminPassword("");
+    setStaffPasswordInput("");
+    setAuthError("");
+    setWipeItemsFeedback(null);
+    setWipeCategoriesFeedback(null);
+    setWipeOrdersFeedback(null);
+    setShowConfirmWipeItems(false);
+    setShowConfirmWipeCategories(false);
+    setShowConfirmWipeOrders(false);
+  }, [activeTab]);
+
+  const handleSaveUpiId = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!restaurantId) return;
+    setIsUpdatingUpiId(true);
+    try {
+      await updateDoc(doc(db, "restaurants", restaurantId), {
+        upiId: upiIdInput.trim()
+      });
+      alert("Destination personal UPI ID updated successfully.");
+    } catch (err: any) {
+      console.error("Failed to update UPI ID:", err);
+      alert("Error saving UPI ID: " + (err.message || String(err)));
+    } finally {
+      setIsUpdatingUpiId(false);
+    }
+  };
 
   const handleWipeAllItems = async () => {
     setIsWipingItems(true);
@@ -238,6 +293,12 @@ export default function AdminConsole({
     });
     return unsub;
   }, [restaurantId]);
+
+  useEffect(() => {
+    if (currentStaffPassword) {
+      setNewStaffPassword(currentStaffPassword);
+    }
+  }, [currentStaffPassword]);
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -408,7 +469,6 @@ export default function AdminConsole({
       }
       alert("Staff password successfully changed to: " + newStaffPassword);
       setCurrentStaffPassword(newStaffPassword);
-      setNewStaffPassword("");
     } catch (err: any) {
       console.error("Failed to update staff password:", err);
       alert("Error saving staff password: " + (err.message || String(err)));
@@ -471,6 +531,7 @@ export default function AdminConsole({
     const { dailyStart } = getCurrentRolloverTimes();
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const acceptedCount = orders.filter(o => o.status === "accepted").length;
+    const upiCount = orders.filter(o => o.paymentMode === "UPI").length;
     
     const completedToday = orders.filter(o => {
       if (o.status !== "completed") return false;
@@ -487,14 +548,20 @@ export default function AdminConsole({
       pendingCount,
       acceptedCount,
       completedCount: orders.filter(o => o.status === "completed").length,
-      revenueToday
+      revenueToday,
+      upiCount
     };
   }, [orders]);
 
   // Order sorting: newest first for pending/accepted, completed newest first
   const sortedAndFilteredOrders = useMemo(() => {
     return orders
-      .filter(o => o.status === orderFilter)
+      .filter(o => {
+        if (orderFilter === "upi") {
+          return o.paymentMode === "UPI";
+        }
+        return o.status === orderFilter;
+      })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [orders, orderFilter]);
 
@@ -518,6 +585,28 @@ export default function AdminConsole({
       .filter(o => {
         try {
           return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+        } catch (e) {
+          return false;
+        }
+      })
+      .reduce((sum, o) => sum + o.total, 0);
+
+    const monthlyUpiRevenue = completedOrders
+      .filter(o => {
+        try {
+          const isThisMonth = new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          return isThisMonth && o.paymentMode === "UPI";
+        } catch (e) {
+          return false;
+        }
+      })
+      .reduce((sum, o) => sum + o.total, 0);
+
+    const monthlyCashRevenue = completedOrders
+      .filter(o => {
+        try {
+          const isThisMonth = new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          return isThisMonth && (o.paymentMode === "CASH" || !o.paymentMode);
         } catch (e) {
           return false;
         }
@@ -618,6 +707,8 @@ export default function AdminConsole({
     return {
       revenueToday,
       revenueThisMonth,
+      monthlyUpiRevenue,
+      monthlyCashRevenue,
       totalRevenue,
       bestSellers,
       hourlyOrders,
@@ -1082,10 +1173,9 @@ export default function AdminConsole({
               onBackToMenu();
             }}
             title="Go to Users Page"
-            className="flex h-8 w-8 sm:w-auto items-center justify-center gap-1.5 rounded-lg border border-emerald-950 bg-emerald-950/20 px-0 sm:px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0 shadow-md"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-950 bg-emerald-950/20 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/35 transition cursor-pointer shrink-0 shadow-md"
           >
             <Eye className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Go to Users Page</span>
           </button>
           <button
             onClick={handleSignOut}
@@ -1165,15 +1255,108 @@ export default function AdminConsole({
                   COMPLETED ({stats.completedCount})
                   {orderFilter === "completed" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-200" />}
                 </button>
+                <button
+                  onClick={() => setOrderFilter("upi")}
+                  id="filter-upi"
+                  className={`relative font-sans text-xs font-semibold uppercase tracking-wider pb-2 transition-all cursor-pointer ${
+                    orderFilter === "upi" ? "text-rose-400 font-bold" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  UPI HISTORY ({stats.upiCount})
+                  {orderFilter === "upi" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500" />}
+                </button>
               </div>
 
               {/* Orders Listing */}
-              {sortedAndFilteredOrders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center" id="empty-queue-msg">
+              {orderFilter === "upi" ? (
+                <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/10 p-5 space-y-4 animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h3 className="text-xs font-bold tracking-wider uppercase text-zinc-100 flex items-center gap-2 font-sans animate-fadeIn">
+                        <CreditCard className="h-3.5 w-3.5 text-rose-400" />
+                        UPI Payment History
+                      </h3>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Real-time payment logs and verification metrics</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-lg bg-zinc-950 border border-zinc-850 px-2.5 py-1 font-mono text-[10px] text-zinc-400">
+                        Total UPI Orders: {stats.upiCount}
+                      </span>
+                      <span className="rounded-lg bg-rose-950/20 border border-rose-900/35 px-2.5 py-1 font-mono text-[10px] text-rose-350">
+                        Completed UPI: ₹{orders.filter(o => o.paymentMode === "UPI" && o.status === "completed").reduce((sum, o) => sum + o.total, 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {orders.filter(o => o.paymentMode === "UPI").length === 0 ? (
+                    <div className="text-center py-12 text-zinc-500 text-xs border border-dashed border-zinc-800/40 rounded-xl bg-zinc-950/10 animate-fadeIn">
+                      No UPI transactions recorded yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-zinc-800/40 bg-[#080808]/70">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-zinc-800/60 bg-zinc-900/30 font-mono text-[10px] text-zinc-500 uppercase tracking-wider">
+                            <th className="p-3 font-semibold">Table Identifier</th>
+                            <th className="p-3 font-semibold">Order ID / Date</th>
+                            <th className="p-3 font-semibold">Items Purchased</th>
+                            <th className="p-3 text-right font-semibold">Amount</th>
+                            <th className="p-3 text-center font-semibold">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-850/40 font-sans">
+                          {orders
+                            .filter(o => o.paymentMode === "UPI")
+                            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                            .map((order) => {
+                              const dateObj = new Date(order.createdAt);
+                              const formattedTime = dateObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "numeric", hour12: true });
+                              const formattedDate = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                              
+                              return (
+                                <tr key={order.id} className="hover:bg-zinc-900/20 transition-colors">
+                                  <td className="p-3 font-mono font-bold text-zinc-300">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-zinc-950 border border-zinc-850 text-[10px] text-zinc-400">
+                                      Table {order.tableId}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="font-mono text-[10px] font-semibold text-zinc-200 select-all">{order.id}</div>
+                                    <div className="text-[10px] text-zinc-500 mt-0.5 font-mono">{formattedDate}, {formattedTime}</div>
+                                  </td>
+                                  <td className="p-3 text-zinc-400">
+                                    <div className="line-clamp-2 max-w-[285px] leading-relaxed">
+                                      {order.items.map(item => `${formatItemName(item.name)} (${item.quantity}x)`).join(", ")}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-right font-mono font-bold text-emerald-400">
+                                    ₹{order.total.toFixed(2)}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider font-extrabold ${
+                                      order.status === "completed"
+                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                        : order.status === "accepted"
+                                          ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                    }`}>
+                                      {order.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : sortedAndFilteredOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn" id="empty-queue-msg">
                   <p className="font-sans text-sm text-neutral-500">No {orderFilter} orders currently in the system.</p>
                 </div>
               ) : (
-                <div className="space-y-4" id="orders-list-block">
+                <div className="space-y-4 animate-fadeIn" id="orders-list-block">
                   {sortedAndFilteredOrders.map((order) => {
                     return (
                       <div 
@@ -2089,6 +2272,88 @@ export default function AdminConsole({
 
               {/* Right Column: SECURITY AND DATA SWEEPS */}
               <div className="space-y-6">
+                {/* UPI PAYMENT DEPLOYMENT PANEL */}
+                {upiPermitted && (
+                  <div className="rounded-2xl border border-neutral-900 bg-neutral-900/15 p-6 space-y-5">
+                    <div className="border-b border-zinc-850 pb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="font-sans text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                          <IndianRupee className="h-4.5 w-4.5 text-amber-500" />
+                          UPI Payment Integration
+                        </h3>
+                        <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1 font-semibold">
+                          Accept instant client orders with UPI
+                        </p>
+                      </div>
+                      <span className="rounded bg-emerald-950/40 border border-emerald-900/60 px-2 py-0.5 text-[8.5px] font-bold uppercase tracking-wider text-emerald-400 font-mono">
+                        Permitted
+                      </span>
+                    </div>
+
+                    <div className="space-y-4 text-left">
+                      <div className="flex items-center justify-between rounded-xl bg-zinc-950 px-4 py-3.5 border border-zinc-900">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                            UPI Checkout Option
+                          </span>
+                          <p className="text-[10px] text-zinc-500 font-medium">
+                            {upiEnabled ? "Displayed at Seated Order Sheet" : "Disabled (Cash Only)"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          id="toggle-upi-enabled-btn"
+                          onClick={async () => {
+                            if (!restaurantId) return;
+                            try {
+                              await updateDoc(doc(db, "restaurants", restaurantId), {
+                                upiEnabled: !upiEnabled
+                              });
+                            } catch (err: any) {
+                              alert("Failed to toggle UPI setting: " + err.message);
+                            }
+                          }}
+                          className={`relative inline-flex h-5.5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 outline-none ${
+                            upiEnabled ? "bg-amber-500" : "bg-neutral-800"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4.5 w-4.5 transform rounded-full bg-neutral-950 shadow ring-0 transition duration-200 ${
+                              upiEnabled ? "translate-x-4.5" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveUpiId} className="rounded-xl bg-neutral-900/10 p-4 border border-zinc-900 space-y-3 text-left">
+                        <div className="space-y-1">
+                          <label className="text-zinc-500 font-mono uppercase tracking-wider text-[9px] block">Personal Destination UPI ID</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={upiIdInput}
+                              onChange={(e) => setUpiIdInput(e.target.value)}
+                              placeholder="e.g. owner@ybl, business@upi"
+                              className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors font-mono"
+                              required
+                            />
+                            <button
+                              type="submit"
+                              disabled={isUpdatingUpiId || !upiIdInput.trim()}
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-lg text-[10px] font-bold uppercase tracking-wider disabled:opacity-40 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                            >
+                              {isUpdatingUpiId ? "Saving..." : "Save ID"}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 leading-normal font-sans border-t border-neutral-900/40 pt-2.5">
+                          💡 Once enabled, your customers will have two payment modes: <strong className="text-neutral-200 font-semibold">Cash</strong> and <strong className="text-amber-500 font-bold">UPI Payment</strong>. All mobile payments will credit directly into this destination UPI ID.
+                        </p>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
                 {/* STAFF PASSWORD CONTROLS */}
                 <div className="rounded-2xl border border-neutral-900 bg-neutral-900/15 p-6 space-y-5">
                   <div className="border-b border-zinc-850 pb-4">
@@ -2099,19 +2364,12 @@ export default function AdminConsole({
                     <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-neutral-500 mt-1">Configure secret key for menu staff devices</p>
                   </div>
 
-                  <div className="rounded-xl bg-zinc-950 p-4 border border-zinc-900 flex justify-between items-center">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Current Staff Key</span>
-                    <span className="rounded bg-indigo-950/40 border border-indigo-900/60 px-2.5 py-1 font-mono text-xs text-indigo-400 font-bold">
-                      {currentStaffPassword}
-                    </span>
-                  </div>
-
                   <form onSubmit={handleSaveStaffPassword} className="space-y-4">
                     <div className="space-y-1 text-left">
                       <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500">New Staff Password</label>
                       <input
                         type="text"
-                        placeholder="e.g. 5678"
+                        placeholder={`e.g. ${currentStaffPassword || "1234"}`}
                         required
                         value={newStaffPassword}
                         onChange={(e) => setNewStaffPassword(e.target.value)}
@@ -2313,7 +2571,7 @@ export default function AdminConsole({
               className="space-y-8"
             >
               {/* KPI Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" id="analytics-kpi-grid">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="analytics-kpi-grid">
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
                   <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">MONTHLY REVENUE</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-indigo-400 font-extrabold">₹{analytics.revenueThisMonth.toFixed(2)}</p>
@@ -2322,6 +2580,16 @@ export default function AdminConsole({
                 <div className="rounded-2xl border border-zinc-800/40 bg-zinc-900/30 p-5">
                   <span className="font-sans text-[10px] uppercase tracking-widest text-zinc-500">YEARLY REVENUE</span>
                   <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.totalRevenue.toFixed(2)}</p>
+                </div>
+
+                <div className="rounded-2xl border border-rose-950/40 bg-rose-950/15 p-5">
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-rose-400 font-bold">MONTHLY UPI REVENUE</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-rose-400 font-extrabold">₹{analytics.monthlyUpiRevenue.toFixed(2)}</p>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-950/40 bg-emerald-950/15 p-5">
+                  <span className="font-sans text-[10px] uppercase tracking-widest text-emerald-400 font-bold">MONTHLY CASH REVENUE</span>
+                  <p className="mt-1 font-mono text-2xl font-bold text-emerald-400 font-extrabold">₹{analytics.monthlyCashRevenue.toFixed(2)}</p>
                 </div>
               </div>
 

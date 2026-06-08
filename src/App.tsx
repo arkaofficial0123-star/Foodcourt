@@ -141,6 +141,9 @@ export default function App() {
 
   // High safety permission flag
   const [isRestaurantDisabled, setIsRestaurantDisabled] = useState(false);
+  const [upiPermitted, setUpiPermitted] = useState(false);
+  const [upiId, setUpiId] = useState("");
+  const [upiEnabled, setUpiEnabled] = useState(false);
   const [superAdminCredentials, setSuperAdminCredentials] = useState({ id: "ADMIN", password: "1234" });
 
   // Dynamic tenant-isolated data state
@@ -340,6 +343,9 @@ export default function App() {
       if (snap.exists()) {
         const d = snap.data();
         setRestaurantName(d.name || "Local Branch");
+        setUpiPermitted(!!d.upiPermitted);
+        setUpiId(d.upiId || "");
+        setUpiEnabled(!!d.upiEnabled);
         if (d.isEnabled === false) {
           setIsRestaurantDisabled(true);
           sessionStorage.removeItem(`admin_role_${restaurantId}`);
@@ -350,6 +356,9 @@ export default function App() {
       } else {
         setRestaurantName("Unknown Brand");
         setIsRestaurantDisabled(false);
+        setUpiPermitted(false);
+        setUpiId("");
+        setUpiEnabled(false);
       }
       restReady = true;
       checkReady();
@@ -800,6 +809,9 @@ export default function App() {
           onBackToMenu={() => handleToggleAdminMode(false)}
           restaurantId={restaurantId}
           restaurantName={restaurantName}
+          upiPermitted={upiPermitted}
+          upiId={upiId}
+          upiEnabled={upiEnabled}
           onLogoutToLogin={() => {
             setRestaurantId(null);
             setIsAdmin(false);
@@ -857,6 +869,9 @@ export default function App() {
         onGoToAdmin={() => handleToggleAdminMode(true)}
         restaurantId={restaurantId}
         restaurantName={restaurantName}
+        upiPermitted={upiPermitted}
+        upiId={upiId}
+        upiEnabled={upiEnabled}
       />
     </motion.div>
   );

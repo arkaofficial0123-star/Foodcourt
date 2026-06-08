@@ -7,7 +7,8 @@ import { useState, useMemo } from "react";
 import { MenuItem, OrderItem, BannerSettings, Order, Category } from "../types";
 import { 
   Search, Plus, Minus, ShoppingCart, 
-  Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock, X
+  Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock, X,
+  IndianRupee, AlertTriangle, Smartphone
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
@@ -35,6 +36,9 @@ interface ClientMenuProps {
   onGoToAdmin: () => void;
   restaurantId?: string | null;
   restaurantName?: string;
+  upiPermitted?: boolean;
+  upiId?: string;
+  upiEnabled?: boolean;
 }
 
 export default function ClientMenu({ 
@@ -46,14 +50,22 @@ export default function ClientMenu({
   onBackToTableSelect,
   onGoToAdmin,
   restaurantId = null,
-  restaurantName = "Foodcourt"
+  restaurantName = "Foodcourt",
+  upiPermitted = false,
+  upiId = "",
+  upiEnabled = false
 }: ClientMenuProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [isCartMinimized, setIsCartMinimized] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  const [placedOrder, setPlacedOrder] = useState<{ id: string; total: number } | null>(null);
+  const [placedOrder, setPlacedOrder] = useState<{ id: string; total: number; paymentMode?: string } | null>(null);
+  const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI">("CASH");
+  const [showUpiVerification, setShowUpiVerification] = useState(false);
+
+  const isUpiAllowed = !!(upiPermitted && upiEnabled);
+  const currentPaymentMode = isUpiAllowed ? paymentMode : "CASH";
 
   // Secret 5-tap sequence on Logo to access Staff Mode discretely
   const [logoClicks, setLogoClicks] = useState(0);
@@ -260,11 +272,62 @@ export default function ClientMenu({
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
-  // Place order into Firebase Firestore
   const handlePlaceOrder = async () => {
     if (cart.length === 0 || isPlacingOrder) return;
-    setIsPlacingOrder(true);
 
+    if (currentPaymentMode === "UPI") {
+      setIsPlacingOrder(true);
+      const targetUpiId = upiId || "arka.official0123@gmail.com";
+      const upiUrl = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+
+      try {
+        window.location.href = upiUrl;
+      } catch (err) {
+        console.warn("Could not navigate natively to UPI:", err);
+      }
+
+      const orderId = "order_" + Math.random().toString(36).substring(2, 12);
+      const timestampStr = new Date().toISOString();
+
+      const orderPayload = {
+        tableId,
+        items: cart.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: typeof item.price === "number" ? item.price : (parseFloat(item.price as any) || 0),
+          quantity: item.quantity
+        })),
+        total: parseFloat(cartTotal.toFixed(2)),
+        status: "pending" as const,
+        createdAt: timestampStr,
+        updatedAt: timestampStr,
+        paymentMode: "UPI",
+        paymentStatus: "paid"
+      };
+
+      try {
+        const orderDocRef = restaurantId
+          ? doc(db, "restaurants", restaurantId, "orders", orderId)
+          : doc(db, "orders", orderId);
+        await setDoc(orderDocRef, orderPayload);
+        
+        setPlacedOrder({
+          id: orderId,
+          total: orderPayload.total,
+          paymentMode: "UPI"
+        });
+
+        setCart([]);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `orders/${orderId}`);
+      } finally {
+        setIsPlacingOrder(false);
+      }
+      return;
+    }
+
+    // CASH PAYMENT MODE
+    setIsPlacingOrder(true);
     const orderId = "order_" + Math.random().toString(36).substring(2, 12);
     const timestampStr = new Date().toISOString();
 
@@ -280,6 +343,8 @@ export default function ClientMenu({
       status: "pending" as const,
       createdAt: timestampStr,
       updatedAt: timestampStr,
+      paymentMode: "CASH",
+      paymentStatus: "pending"
     };
 
     try {
@@ -293,6 +358,7 @@ export default function ClientMenu({
       setPlacedOrder({
         id: orderId,
         total: orderPayload.total,
+        paymentMode: "CASH"
       });
 
       // Reset local cart state
@@ -613,11 +679,76 @@ export default function ClientMenu({
                 ))}
               </div>
 
+              {/* Payment Mode Selector inside collapsible Selected Plates sheet */}
+              {isUpiAllowed && (
+                <div className="border-t border-zinc-100 pt-3.5 space-y-2.5 text-left font-sans">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold block">
+                    Choose Payment Method
+                  </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* CASH OPTION */}
+                    <button
+                      type="button"
+                      id="pay-cash-selector"
+                      onClick={() => setPaymentMode("CASH")}
+                      className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all duration-200 cursor-pointer active:scale-[0.97] ${
+                        currentPaymentMode === "CASH"
+                          ? "bg-zinc-950 border-zinc-950 text-white shadow-md shadow-zinc-950/10"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100/60"
+                      }`}
+                    >
+                      <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        💵 Cash
+                      </span>
+                      <span className={`text-[9px] font-mono leading-tight ${currentPaymentMode === "CASH" ? "text-zinc-300" : "text-zinc-500"}`}>
+                        Pay at the counter
+                      </span>
+                    </button>
+
+                    {/* UPI OPTION */}
+                    <button
+                      type="button"
+                      id="pay-upi-selector"
+                      onClick={() => setPaymentMode("UPI")}
+                      className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all duration-200 cursor-pointer active:scale-[0.97] ${
+                        currentPaymentMode === "UPI"
+                          ? "bg-zinc-950 border-zinc-950 text-white shadow-md shadow-zinc-950/10"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100/60"
+                      }`}
+                    >
+                      <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        📱 UPI Payment
+                      </span>
+                      <span className={`text-[9px] font-mono leading-tight ${currentPaymentMode === "UPI" ? "text-zinc-300" : "text-zinc-500"}`}>
+                        Pay with GPAY, etc.
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Warning message if UPI selected */}
+                  {currentPaymentMode === "UPI" && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl bg-amber-50 border border-amber-200/65 p-3 flex gap-2 items-start"
+                    >
+                      <span className="text-sm">⚠️</span>
+                      <div className="space-y-0.5">
+                        <h5 className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Crucial Order Terms</h5>
+                        <p className="text-[10px] text-amber-900 leading-normal font-medium">
+                          Cancellation or modifications are <strong className="font-extrabold text-amber-955 underline">not possible</strong> after UPI checkout. Please check your plates selection.
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
               {/* Quick Checkout total and Single Click Submit Button */}
               <div className="flex flex-col gap-4 pt-2 md:flex-row md:items-center md:justify-between md:gap-8 border-t border-zinc-50">
                 <div className="flex justify-between md:flex-col md:justify-center">
                   <span className="font-sans text-[10px] uppercase tracking-[0.15em] text-zinc-400 font-medium">Chef's Total Sum</span>
-                  <span className="font-sans text-2xl font-extrabold tracking-tight text-zinc-950">₹{cartTotal.toFixed(2)}</span>
+                  <span className="font-sans text-2xl font-extrabold tracking-tight text-zinc-950 font-mono">₹{cartTotal.toFixed(2)}</span>
                 </div>
 
                 <button
@@ -627,7 +758,13 @@ export default function ClientMenu({
                   className="flex flex-grow items-center justify-center gap-3 rounded-2xl bg-zinc-950 py-3.5 px-6 md:px-12 font-sans text-sm font-bold uppercase tracking-wider text-white transition-all hover:bg-zinc-800 disabled:opacity-50 active:scale-[0.98] cursor-pointer shadow-lg shadow-zinc-950/20"
                 >
                   <Send className="h-4 w-4 shrink-0" />
-                  <span>{isPlacingOrder ? "Placing Order..." : "ORDER NOW"}</span>
+                  <span>
+                    {isPlacingOrder 
+                      ? "Processing..." 
+                      : currentPaymentMode === "UPI" 
+                        ? "PAY & PLACE ORDER" 
+                        : "ORDER NOW"}
+                  </span>
                 </button>
               </div>
             </div>
@@ -656,13 +793,21 @@ export default function ClientMenu({
               </div>
 
               <div className="space-y-2">
-                <h3 className="font-sans text-2xl font-light tracking-tight text-neutral-100">Order Placed!</h3>
+                <h3 className="font-sans text-2xl font-light tracking-tight text-neutral-100">Order Successful!</h3>
                 <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
                   Ref ID: {placedOrder.id}
                 </p>
-                <p className="text-sm text-neutral-400 px-2 leading-relaxed">
-                  Your kitchen ticket has been finalized for <strong className="text-neutral-100">{tableId}</strong>. We are processing your order.
-                </p>
+                {placedOrder.paymentMode === "UPI" ? (
+                  <p className="text-[12px] text-zinc-400 px-1 leading-relaxed bg-emerald-950/20 border border-emerald-900/45 p-3 rounded-xl text-left">
+                    🚀 <strong className="text-emerald-400 font-bold uppercase tracking-wider font-mono">UPI Payment Cleared!</strong><br />
+                    Your transaction of ₹{placedOrder.total.toFixed(2)} was completed successfully. Your cooking ticket is active!
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-zinc-400 px-1 leading-relaxed bg-zinc-900/50 border border-zinc-800/60 p-3 rounded-xl text-left">
+                    💵 <strong className="text-zinc-200 font-bold uppercase tracking-wider font-mono">Cash Mode Selected!</strong><br />
+                    Your cooking ticket is queued for <span className="font-bold text-neutral-100">{tableId}</span>. Please pay ₹{placedOrder.total.toFixed(2)} at the counter after dining.
+                  </p>
+                )}
               </div>
 
               <div className="border-t border-neutral-900 pt-4 space-y-2">

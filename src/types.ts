@@ -34,6 +34,7 @@ export interface Order {
   status: "pending" | "accepted" | "completed";
   createdAt: string;
   updatedAt: string;
+  paymentMode?: string;
 }
 
 export interface BannerSettings {
