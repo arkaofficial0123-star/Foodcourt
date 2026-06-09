@@ -8,7 +8,7 @@ import { MenuItem, OrderItem, BannerSettings, Order, Category } from "../types";
 import { 
   Search, Plus, Minus, ShoppingCart, 
   Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock, X,
-  IndianRupee, AlertTriangle, Smartphone
+  IndianRupee, AlertTriangle, Smartphone, Copy, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
@@ -64,6 +64,8 @@ export default function ClientMenu({
   const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI">("CASH");
   const [showUpiVerification, setShowUpiVerification] = useState(false);
   const [upiOrderId, setUpiOrderId] = useState<string | null>(null);
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [copiedAmount, setCopiedAmount] = useState(false);
 
   const pendingUpiOrderRef = useRef<any>(null);
 
@@ -330,6 +332,27 @@ export default function ClientMenu({
       pendingUpiOrderRef.current = null;
       setShowUpiVerification(false);
       setIsPlacingOrder(false);
+    }
+  };
+
+  const handleCopyUpi = () => {
+    const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
+    try {
+      navigator.clipboard.writeText(targetUpiId);
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  };
+
+  const handleCopyAmount = () => {
+    try {
+      navigator.clipboard.writeText(cartTotal.toFixed(2));
+      setCopiedAmount(true);
+      setTimeout(() => setCopiedAmount(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
     }
   };
 
@@ -927,20 +950,59 @@ export default function ClientMenu({
                       {restaurantName}
                     </span>
                   </div>
+                  
                   <div className="flex justify-between items-center text-[10px] text-zinc-500">
                     <span>UPI ID:</span>
-                    <span className="text-amber-500 font-bold truncate max-w-[150px]" title={upiId || "arka.official0123@gmail.com"}>
-                      {upiId || "arka.official0123@gmail.com"}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyUpi}
+                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 text-amber-500 hover:text-amber-400 font-bold cursor-pointer active:scale-95 transition-all outline-none"
+                      title="Click to copy UPI ID"
+                    >
+                      <span className="truncate max-w-[120px] font-mono">{upiId || "arka.official0123@gmail.com"}</span>
+                      {copiedUpi ? (
+                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
+                      )}
+                    </button>
                   </div>
+
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
                     <span>AMOUNT:</span>
-                    <span className="text-zinc-100 font-bold text-xs">₹{cartTotal.toFixed(2)}</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyAmount}
+                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 font-bold cursor-pointer active:scale-95 transition-all outline-none"
+                      title="Click to copy exact amount"
+                    >
+                      <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
+                      {copiedAmount ? (
+                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
+                      )}
+                    </button>
                   </div>
+
                   <div className="flex justify-between items-center text-[10px] text-zinc-500">
                     <span>SYSTEM ID:</span>
                     <span className="text-zinc-400 text-[10px] uppercase tracking-tighter truncate max-w-[100px]">{upiOrderId || "PLACING..."}</span>
                   </div>
+                </div>
+
+                {/* Helpful error-proofing tips for direct peer bank deep-linking restrictions */}
+                <div className="rounded-xl border border-rose-500/15 bg-rose-500/5 p-3 text-left space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span>Bank Limit or Debit Failed?</span>
+                  </div>
+                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
+                    If your payment app says <span className="text-neutral-200 font-medium">"Your money has not been debited"</span> or a limit error, it is due to bank security policies on browser deep links.
+                  </p>
+                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
+                     <span className="text-amber-400 font-semibold">Easy Fix:</span> Click the UPI ID above to <strong className="text-neutral-200 font-semibold">Copy</strong> it, open your payment app manually, paste/search the UPI ID, and pay <strong className="text-neutral-200 font-semibold">₹{cartTotal.toFixed(2)}</strong>!
+                  </p>
                 </div>
 
                 <div className="text-[10px] text-amber-500 animate-pulse font-mono flex items-center justify-center gap-2 py-1 bg-amber-500/5 rounded-lg border border-amber-500/10">
