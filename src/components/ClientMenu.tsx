@@ -952,84 +952,30 @@ export default function ClientMenu({
                   <Smartphone className="h-7 w-7 animate-pulse" />
                 </div>
 
-                <div className="space-y-1">
-                  <h3 className="font-sans text-base font-bold tracking-tight text-neutral-100">Awaiting UPI Payment</h3>
-                  <p className="text-[11px] text-zinc-400 leading-normal max-w-xs mx-auto">
-                    Transfer <strong className="text-amber-500 font-extrabold">₹{cartTotal.toFixed(2)}</strong> via UPI. Your order confirms <strong className="text-emerald-400">automatically</strong> once accepted!
-                  </p>
+                <div className="space-y-1 pb-1">
+                  <h3 className="font-sans text-base font-bold tracking-tight text-neutral-100 animate-pulse">Awaiting UPI Payment</h3>
                 </div>
 
                 <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 space-y-2 text-left font-mono">
                   <div className="flex justify-between items-center text-[10px] text-zinc-500">
                     <span>RESTAURANT:</span>
-                    <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[125px]" title={restaurantName}>
+                    <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[150px]" title={restaurantName}>
                       {restaurantName}
                     </span>
-                  </div>
-                  
-                  <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                    <span>UPI ADDRESS:</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyUpi}
-                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 text-amber-500 hover:text-amber-400 font-bold cursor-pointer active:scale-95 transition-all outline-none"
-                      title="Click to copy UPI ID"
-                    >
-                      <span className="truncate max-w-[130px] font-mono tracking-wider">{maskUpiId(upiId)}</span>
-                      {copiedUpi ? (
-                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
-                      )}
-                    </button>
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
                     <span>AMOUNT TO PAY:</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyAmount}
-                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 font-bold cursor-pointer active:scale-95 transition-all outline-none"
-                      title="Click to copy exact amount"
-                    >
-                      <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
-                      {copiedAmount ? (
-                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
-                      )}
-                    </button>
+                    <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
                   </div>
 
-                  <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
                     <span>SYSTEM ID:</span>
-                    <span className="text-zinc-400 text-[10px] uppercase tracking-tighter truncate max-w-[100px]">{upiOrderId || "PLACING..."}</span>
+                    <span className="text-zinc-200 text-[10px] uppercase tracking-tighter truncate max-w-[120px] font-semibold">{upiOrderId || "PLACING..."}</span>
                   </div>
                 </div>
 
-                {/* Helpful error-proofing tips for direct peer bank deep-linking restrictions */}
-                <div className="rounded-xl border border-rose-500/15 bg-rose-500/5 p-3 text-left space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    <span>Got a bank error or limit message?</span>
-                  </div>
-                  <p className="font-sans text-[10px] leading-normal text-zinc-400">
-                    If GPay/PhonePe says <span className="text-neutral-200 font-medium">"Your money has not been debited"</span> or has a limit block, it is a mobile security filter on links with pre-set amounts.
-                  </p>
-                  <p className="font-sans text-[10px] leading-normal text-zinc-400">
-                    <span className="text-amber-400 font-semibold">Instant Fix:</span> Click <strong className="text-amber-400">Secure Direct Manual Pay</strong> below (Option 2) or Copy the UPI address manually, paste it in your app, and send ₹{cartTotal.toFixed(2)}!
-                  </p>
-                </div>
-
-                <div className="text-[10px] text-amber-500 animate-pulse font-mono flex items-center justify-center gap-2 py-1 bg-amber-500/5 rounded-lg border border-amber-500/10">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
-                  Live verification handshake active...
-                </div>
-
-                <div className="space-y-2 pt-2 border-t border-zinc-900/60 text-left">
-                  <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-wider block mb-1">Select Payment Launch Mode:</span>
-                  
-                  {/* OPTION 1: Automatic amount (Express) */}
+                <div className="grid grid-cols-2 gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
@@ -1039,56 +985,17 @@ export default function ClientMenu({
                         console.warn("Retrying native launch failed:", err);
                       }
                     }}
-                    className="w-full rounded-xl bg-zinc-900 hover:bg-zinc-850 text-zinc-100 py-2 px-3 flex items-center justify-between border border-zinc-800 transition active:scale-95 cursor-pointer text-xs"
+                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
                   >
-                    <div className="text-left">
-                      <div className="font-bold">Option 1: Express Pay (Auto Amount)</div>
-                      <div className="text-[9px] text-zinc-400 font-sans">Pre-fills ₹{cartTotal.toFixed(2)} automatically in app</div>
-                    </div>
-                    <span className="text-zinc-500">⚡</span>
+                    Try Again
                   </button>
-
-                  {/* OPTION 2: Stripped amount (Secure / Manual entry) */}
                   <button
                     type="button"
-                    onClick={() => {
-                      try {
-                        window.location.href = getUpiUrl(false);
-                      } catch (err) {
-                        console.warn("Retrying native launch failed:", err);
-                      }
-                    }}
-                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 py-2.5 px-3 flex items-center justify-between transition active:scale-95 cursor-pointer text-xs font-semibold"
+                    onClick={handleCancelUpiOrder}
+                    className="w-full py-2.5 border border-zinc-800 text-xs text-zinc-400 hover:text-rose-400 hover:bg-rose-950/10 rounded-xl uppercase tracking-wider font-bold transition cursor-pointer"
                   >
-                    <div className="text-left text-neutral-950">
-                      <div className="font-extrabold">Option 2: Secure Direct Pay (Recommended)</div>
-                      <div className="text-[9px] text-neutral-900 font-medium font-sans">No limit errors! Open app & type ₹{cartTotal.toFixed(2)} manually</div>
-                    </div>
-                    <span className="text-zinc-950">🔒</span>
+                    Cancel
                   </button>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          window.location.href = getUpiUrl(true);
-                        } catch (err) {
-                          console.warn("Retrying native launch failed:", err);
-                        }
-                      }}
-                      className="py-1.5 border border-zinc-800 text-[10px] text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-lg uppercase tracking-wider font-bold transition text-center cursor-pointer"
-                    >
-                      Reopen App
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelUpiOrder}
-                      className="py-1.5 border border-zinc-800/80 text-[10px] text-zinc-400 hover:text-rose-400 hover:bg-rose-950/10 rounded-lg uppercase tracking-wider font-bold transition text-center cursor-pointer"
-                    >
-                      Cancel Order
-                    </button>
-                  </div>
                 </div>
               </div>
             </motion.div>
