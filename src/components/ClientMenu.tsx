@@ -275,70 +275,7 @@ export default function ClientMenu({
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
-  // Automatic UPI payment detection upon returning to the browser tab
-  useEffect(() => {
-    let detectTimeoutId: any;
-
-    if (!showUpiVerification || upiDetectState !== "awaiting") return;
-
-    const executeAutoUpiCompletion = async () => {
-      if (!pendingUpiOrderRef.current) return;
-      setUpiDetectState("detecting");
-
-      // Simulates real-time payment network polling and direct bank confirmation checks
-      detectTimeoutId = setTimeout(async () => {
-        if (!pendingUpiOrderRef.current) return;
-        setIsPlacingOrder(true);
-        try {
-          const orderPayload = pendingUpiOrderRef.current;
-          const orderId = orderPayload.id;
-
-          const orderDocRef = restaurantId
-            ? doc(db, "restaurants", restaurantId, "orders", orderId)
-            : doc(db, "orders", orderId);
-          await setDoc(orderDocRef, orderPayload);
-
-          // Success screen auto-rendered
-          setPlacedOrder({
-            id: orderId,
-            total: orderPayload.total,
-            paymentMode: "UPI"
-          });
-
-          // Reset cart & verification states cleanly
-          setCart([]);
-          setUpiDetectState("completed");
-          setShowUpiVerification(false);
-          pendingUpiOrderRef.current = null;
-        } catch (err) {
-          console.error("Auto UPI placement failed:", err);
-          setUpiDetectState("awaiting");
-        } finally {
-          setIsPlacingOrder(false);
-        }
-      }, 2200);
-    };
-
-    const handleTabReturn = () => {
-      if (document.visibilityState === "visible") {
-        executeAutoUpiCompletion();
-      }
-    };
-
-    const handleFocusReturn = () => {
-      executeAutoUpiCompletion();
-    };
-
-    document.addEventListener("visibilitychange", handleTabReturn);
-    window.addEventListener("focus", handleFocusReturn);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleTabReturn);
-      window.removeEventListener("focus", handleFocusReturn);
-      if (detectTimeoutId) clearTimeout(detectTimeoutId);
-    };
-  }, [showUpiVerification, upiDetectState, restaurantId]);
-
+  // Removed automatic UPI tab return to prevent auto-completion when user exits without paying
   const handleManualBypassUpi = async () => {
     if (!pendingUpiOrderRef.current || isPlacingOrder) return;
     setUpiDetectState("detecting");
@@ -352,21 +289,24 @@ export default function ClientMenu({
         : doc(db, "orders", orderId);
       await setDoc(orderDocRef, orderPayload);
 
-      setPlacedOrder({
-        id: orderId,
-        total: orderPayload.total,
-        paymentMode: "UPI"
-      });
+      // Hold the verifying state for 1.5 seconds to show settlement confirmation handshake
+      setTimeout(() => {
+        setPlacedOrder({
+          id: orderId,
+          total: orderPayload.total,
+          paymentMode: "UPI"
+        });
 
-      setCart([]);
-      setUpiDetectState("completed");
-      setShowUpiVerification(false);
-      pendingUpiOrderRef.current = null;
+        setCart([]);
+        setUpiDetectState("completed");
+        setShowUpiVerification(false);
+        pendingUpiOrderRef.current = null;
+        setIsPlacingOrder(false);
+      }, 1550);
     } catch (err: any) {
       console.error("Manual UPI bypass failed:", err);
       alert("Error: " + (err.message || String(err)));
       setUpiDetectState("awaiting");
-    } finally {
       setIsPlacingOrder(false);
     }
   };
