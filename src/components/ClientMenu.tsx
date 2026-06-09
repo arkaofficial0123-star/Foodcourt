@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
-import { collection, doc, setDoc, onSnapshot, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import Banner from "./Banner";
 
 const formatItemName = (name: string): string => {
@@ -83,25 +83,6 @@ export default function ClientMenu({
 
   const isUpiAllowed = !!(upiPermitted && upiEnabled);
   const currentPaymentMode = isUpiAllowed ? paymentMode : "CASH";
-
-  // Secret 5-tap sequence on Logo to access Staff Mode discretely
-  const [logoClicks, setLogoClicks] = useState(0);
-  const [lastClickTime, setLastClickTime] = useState(0);
-
-  const handleLogoClick = () => {
-    const now = Date.now();
-    if (now - lastClickTime < 1500) {
-      const nextClicks = logoClicks + 1;
-      setLogoClicks(nextClicks);
-      if (nextClicks >= 5) {
-        setLogoClicks(0);
-        onGoToAdmin();
-      }
-    } else {
-      setLogoClicks(1);
-    }
-    setLastClickTime(now);
-  };
 
   // Dynamically prepare the category list with NO "Others" category pill
   const renderedCategories = useMemo(() => {
@@ -290,11 +271,11 @@ export default function ClientMenu({
   }, [cart]);
 
   // Helper to generate the UPI Payment link cleanly
-  const getUpiUrl = (includeAmount = false) => {
+  const getUpiUrl = (includeAmount = true) => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
-    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR`;
+    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
     if (includeAmount) {
-      url += `&am=${cartTotal.toFixed(2)}&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+      url += `&am=${cartTotal.toFixed(2)}`;
     }
     return url;
   };
@@ -328,25 +309,7 @@ export default function ClientMenu({
       console.error("Error watching pending UPI order state:", error);
     });
 
-    // Smart Auto-Handshake Simulator: If testing with unverified Peer UPI IDs,
-    // this auto-approves the order after 5 seconds to bypass manual checkout lock,
-    // transitioning the customer seamlessly to the success screen!
-    const autoSettleTimeout = setTimeout(async () => {
-      try {
-        await updateDoc(orderDocRef, {
-          status: "accepted",
-          paymentStatus: "completed",
-          upiTransactionId: "TXN_" + Math.random().toString(36).substring(2, 10).toUpperCase()
-        });
-      } catch (err) {
-        console.warn("Auto-approval simulation skipped (order accepted/canceled):", err);
-      }
-    }, 5000);
-
-    return () => {
-      unsubscribe();
-      clearTimeout(autoSettleTimeout);
-    };
+    return () => unsubscribe();
   }, [upiOrderId, showUpiVerification, restaurantId, cartTotal]);
 
   // If customer didn't pay/bails: deletes the order doc to prevent backend junk, keeping cart plates selection intact!
@@ -527,8 +490,7 @@ export default function ClientMenu({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <div 
-              onClick={handleLogoClick}
-              className="w-7.5 h-7.5 bg-white flex items-center justify-center rounded-md shadow-md shrink-0 cursor-pointer active:scale-95 transition-transform select-none"
+              className="w-7.5 h-7.5 bg-white flex items-center justify-center rounded-md shadow-md shrink-0 select-none"
               title={restaurantName}
             >
               <span className="text-black font-black text-sm">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
@@ -998,7 +960,7 @@ export default function ClientMenu({
                     type="button"
                     onClick={() => {
                       try {
-                        window.location.href = getUpiUrl(false);
+                        window.location.href = getUpiUrl(true);
                       } catch (err) {
                         console.warn("Retrying native launch failed:", err);
                       }
