@@ -290,11 +290,11 @@ export default function ClientMenu({
   }, [cart]);
 
   // Helper to generate the UPI Payment link cleanly
-  const getUpiUrl = (includeAmount = true) => {
+  const getUpiUrl = (includeAmount = false) => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
-    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR`;
     if (includeAmount) {
-      url += `&am=${cartTotal.toFixed(2)}`;
+      url += `&am=${cartTotal.toFixed(2)}&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
     }
     return url;
   };
@@ -980,7 +980,7 @@ export default function ClientMenu({
                     type="button"
                     onClick={() => {
                       try {
-                        window.location.href = getUpiUrl(true);
+                        window.location.href = getUpiUrl(false);
                       } catch (err) {
                         console.warn("Retrying native launch failed:", err);
                       }
