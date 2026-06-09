@@ -8,11 +8,11 @@ import { MenuItem, OrderItem, BannerSettings, Order, Category } from "../types";
 import { 
   Search, Plus, Minus, ShoppingCart, 
   Trash2, Send, CheckCircle, ArrowLeft, QrCode, Clock, X,
-  IndianRupee, AlertTriangle, Smartphone
+  IndianRupee, AlertTriangle, Smartphone, Copy, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { db, handleFirestoreError, OperationType } from "../firebase";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { collection, doc, setDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import Banner from "./Banner";
 
 const formatItemName = (name: string): string => {
@@ -62,6 +62,12 @@ export default function ClientMenu({
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<{ id: string; total: number; paymentMode?: string } | null>(null);
   const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI">("CASH");
+  const [showUpiVerification, setShowUpiVerification] = useState(false);
+  const [upiOrderId, setUpiOrderId] = useState<string | null>(null);
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [copiedAmount, setCopiedAmount] = useState(false);
+
+  const pendingUpiOrderRef = useRef<any>(null);
 
   const isUpiAllowed = !!(upiPermitted && upiEnabled);
   const currentPaymentMode = isUpiAllowed ? paymentMode : "CASH";
@@ -274,9 +280,80 @@ export default function ClientMenu({
   // Helper to generate the UPI Payment link cleanly
   const getUpiUrl = () => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
-    const encodedUpiId = encodeURIComponent(targetUpiId);
-    const encodedName = encodeURIComponent(restaurantName || "Restaurant");
-    return `upi://pay?pa=${encodedUpiId}&pn=${encodedName}&am=${cartTotal.toFixed(2)}&cu=INR`;
+    return `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+  };
+
+  // Real-time Firestore state sync loop
+  // Customers don't need to click "I paid". The moment the restaurant marks it Accepted or Completed, 
+  // they automatically get routed to the clean "Order Successful!" layout.
+  useEffect(() => {
+    if (!upiOrderId || !showUpiVerification) return;
+
+    const orderDocRef = restaurantId
+      ? doc(db, "restaurants", restaurantId, "orders", upiOrderId)
+      : doc(db, "orders", upiOrderId);
+
+    const unsubscribe = onSnapshot(orderDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.status === "accepted" || data.status === "completed") {
+          setPlacedOrder({
+            id: upiOrderId,
+            total: data.total || cartTotal,
+            paymentMode: "UPI"
+          });
+          setCart([]);
+          setShowUpiVerification(false);
+          setUpiOrderId(null);
+          pendingUpiOrderRef.current = null;
+        }
+      }
+    }, (error) => {
+      console.error("Error watching pending UPI order state:", error);
+    });
+
+    return () => unsubscribe();
+  }, [upiOrderId, showUpiVerification, restaurantId, cartTotal]);
+
+  // If customer didn't pay/bails: deletes the order doc to prevent backend junk, keeping cart plates selection intact!
+  const handleCancelUpiOrder = async () => {
+    if (!upiOrderId || isPlacingOrder) return;
+    setIsPlacingOrder(true);
+    try {
+      const orderDocRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "orders", upiOrderId)
+        : doc(db, "orders", upiOrderId);
+      await deleteDoc(orderDocRef);
+    } catch (err) {
+      console.error("Failed to cleanly delete cancelled UPI order draft:", err);
+    } finally {
+      // Retain the shopping list (cart is NOT reset) so they can edit plates or try again!
+      setUpiOrderId(null);
+      pendingUpiOrderRef.current = null;
+      setShowUpiVerification(false);
+      setIsPlacingOrder(false);
+    }
+  };
+
+  const handleCopyUpi = () => {
+    const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
+    try {
+      navigator.clipboard.writeText(targetUpiId);
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  };
+
+  const handleCopyAmount = () => {
+    try {
+      navigator.clipboard.writeText(cartTotal.toFixed(2));
+      setCopiedAmount(true);
+      setTimeout(() => setCopiedAmount(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
   };
 
   const handlePlaceOrder = async () => {
@@ -301,8 +378,8 @@ export default function ClientMenu({
         createdAt: timestampStr,
         updatedAt: timestampStr,
         paymentMode: "UPI",
-        paymentStatus: "paid",
-        upiTransactionId: "AUTO_DETECTED"
+        paymentStatus: "pending",
+        upiTransactionId: "AWAITING_SETTLEMENT"
       };
 
       try {
@@ -311,25 +388,19 @@ export default function ClientMenu({
           : doc(db, "orders", orderId);
         await setDoc(orderDocRef, orderPayload);
 
-        // Show direct successful placement status immediately
-        setPlacedOrder({
-          id: orderId,
-          total: orderPayload.total,
-          paymentMode: "UPI"
-        });
+        pendingUpiOrderRef.current = orderPayload;
+        setUpiOrderId(orderId);
+        setShowUpiVerification(true);
 
-        // Reset the cart plates selection cleanly
-        setCart([]);
-
-        // Handle direct peer redirect natively
+        // Open payment UPI application natively
         try {
           window.location.href = getUpiUrl();
         } catch (err) {
           console.warn("Could not transition browser schema natively:", err);
         }
       } catch (err) {
-        console.error("Failed to place UPI order:", err);
-        alert("Placement Error: Failed to register order. Try again.");
+        console.error("Failed to commit initial pending UPI order draft to Firestore:", err);
+        alert("Placement Error: Failed to secure transaction with Server. Try again.");
       } finally {
         setIsPlacingOrder(false);
       }
@@ -843,7 +914,130 @@ export default function ClientMenu({
         )}
       </AnimatePresence>
 
+      {/* UPI Auto-Verification Screen */}
+      <AnimatePresence>
+        {showUpiVerification && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/95 p-6 backdrop-blur-md"
+            id="upi-verification-modal"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm rounded-[24px] border border-zinc-900 bg-zinc-950 p-6 text-center space-y-6"
+            >
+              <div className="space-y-5">
+                <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                  <span className="absolute inset-x-0 inset-y-0 rounded-full bg-amber-500/10 animate-ping" />
+                  <Smartphone className="h-8 w-8 animate-pulse" />
+                </div>
 
+                <div className="space-y-1.5">
+                  <h3 className="font-sans text-lg font-bold tracking-tight text-neutral-100">Awaiting UPI Payment</h3>
+                  <p className="text-[11px] text-zinc-400 leading-normal max-w-xs mx-auto">
+                    Transfer <strong className="text-amber-500 font-extrabold">₹{cartTotal.toFixed(2)}</strong> via the UPI app. Your order will confirm <strong className="text-emerald-400">automatically</strong> as soon as the merchant accepts the transaction!
+                  </p>
+                </div>
+
+                <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-900 space-y-2 text-left font-mono">
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                    <span>RESTAURANT:</span>
+                    <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[120px]" title={restaurantName}>
+                      {restaurantName}
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                    <span>UPI ID:</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyUpi}
+                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 text-amber-500 hover:text-amber-400 font-bold cursor-pointer active:scale-95 transition-all outline-none"
+                      title="Click to copy UPI ID"
+                    >
+                      <span className="truncate max-w-[120px] font-mono">{upiId || "arka.official0123@gmail.com"}</span>
+                      {copiedUpi ? (
+                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
+                    <span>AMOUNT:</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyAmount}
+                      className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 font-bold cursor-pointer active:scale-95 transition-all outline-none"
+                      title="Click to copy exact amount"
+                    >
+                      <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
+                      {copiedAmount ? (
+                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                    <span>SYSTEM ID:</span>
+                    <span className="text-zinc-400 text-[10px] uppercase tracking-tighter truncate max-w-[100px]">{upiOrderId || "PLACING..."}</span>
+                  </div>
+                </div>
+
+                {/* Helpful error-proofing tips for direct peer bank deep-linking restrictions */}
+                <div className="rounded-xl border border-rose-500/15 bg-rose-500/5 p-3 text-left space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span>Bank Limit or Debit Failed?</span>
+                  </div>
+                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
+                    If your payment app says <span className="text-neutral-200 font-medium">"Your money has not been debited"</span> or a limit error, it is due to bank security policies on browser deep links.
+                  </p>
+                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
+                     <span className="text-amber-400 font-semibold">Easy Fix:</span> Click the UPI ID above to <strong className="text-neutral-200 font-semibold">Copy</strong> it, open your payment app manually, paste/search the UPI ID, and pay <strong className="text-neutral-200 font-semibold">₹{cartTotal.toFixed(2)}</strong>!
+                  </p>
+                </div>
+
+                <div className="text-[10px] text-amber-500 animate-pulse font-mono flex items-center justify-center gap-2 py-1 bg-amber-500/5 rounded-lg border border-amber-500/10">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                  Live payment handshake active...
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-zinc-900/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        window.location.href = getUpiUrl();
+                      } catch (err) {
+                        console.warn("Retrying native launch failed:", err);
+                      }
+                    }}
+                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                    id="retry-upi-pay-btn"
+                  >
+                    Try Again / Reopen App
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelUpiOrder}
+                    className="w-full py-2 border border-zinc-800 text-[10px] text-zinc-400 hover:text-zinc-200 rounded-lg uppercase tracking-wider font-bold transition cursor-pointer"
+                  >
+                    Cancel & Edit Plates
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
