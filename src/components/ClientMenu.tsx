@@ -26,6 +26,18 @@ const formatItemName = (name: string): string => {
     .join(" ");
 };
 
+const maskUpiId = (id: string): string => {
+  const target = (id || "arka.official0123@gmail.com").trim();
+  const parts = target.split("@");
+  if (parts.length !== 2) return "••••••••••••@••••";
+  const user = parts[0];
+  const domain = parts[1];
+  if (user.length <= 4) {
+    return `${user.substring(0, 1)}••••@${domain}`;
+  }
+  return `${user.substring(0, 3)}••••${user.substring(user.length - 2)}@${domain}`;
+};
+
 interface ClientMenuProps {
   tableId: string;
   items: MenuItem[];
@@ -278,9 +290,13 @@ export default function ClientMenu({
   }, [cart]);
 
   // Helper to generate the UPI Payment link cleanly
-  const getUpiUrl = () => {
+  const getUpiUrl = (includeAmount = true) => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
-    return `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+    if (includeAmount) {
+      url += `&am=${cartTotal.toFixed(2)}`;
+    }
+    return url;
   };
 
   // Real-time Firestore state sync loop
@@ -928,38 +944,38 @@ export default function ClientMenu({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm rounded-[24px] border border-zinc-900 bg-zinc-950 p-6 text-center space-y-6"
+              className="w-full max-w-sm rounded-[24px] border border-zinc-900 bg-zinc-950 p-6 text-center space-y-5"
             >
-              <div className="space-y-5">
-                <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/30">
+              <div className="space-y-4">
+                <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/30">
                   <span className="absolute inset-x-0 inset-y-0 rounded-full bg-amber-500/10 animate-ping" />
-                  <Smartphone className="h-8 w-8 animate-pulse" />
+                  <Smartphone className="h-7 w-7 animate-pulse" />
                 </div>
 
-                <div className="space-y-1.5">
-                  <h3 className="font-sans text-lg font-bold tracking-tight text-neutral-100">Awaiting UPI Payment</h3>
+                <div className="space-y-1">
+                  <h3 className="font-sans text-base font-bold tracking-tight text-neutral-100">Awaiting UPI Payment</h3>
                   <p className="text-[11px] text-zinc-400 leading-normal max-w-xs mx-auto">
-                    Transfer <strong className="text-amber-500 font-extrabold">₹{cartTotal.toFixed(2)}</strong> via the UPI app. Your order will confirm <strong className="text-emerald-400">automatically</strong> as soon as the merchant accepts the transaction!
+                    Transfer <strong className="text-amber-500 font-extrabold">₹{cartTotal.toFixed(2)}</strong> via UPI. Your order confirms <strong className="text-emerald-400">automatically</strong> once accepted!
                   </p>
                 </div>
 
-                <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-900 space-y-2 text-left font-mono">
+                <div className="bg-zinc-900/40 p-3.5 rounded-xl border border-zinc-900/60 space-y-2 text-left font-mono">
                   <div className="flex justify-between items-center text-[10px] text-zinc-500">
                     <span>RESTAURANT:</span>
-                    <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[120px]" title={restaurantName}>
+                    <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[125px]" title={restaurantName}>
                       {restaurantName}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                    <span>UPI ID:</span>
+                    <span>UPI ADDRESS:</span>
                     <button
                       type="button"
                       onClick={handleCopyUpi}
                       className="flex items-center gap-1.5 rounded bg-zinc-900 px-1.5 py-0.5 text-amber-500 hover:text-amber-400 font-bold cursor-pointer active:scale-95 transition-all outline-none"
                       title="Click to copy UPI ID"
                     >
-                      <span className="truncate max-w-[120px] font-mono">{upiId || "arka.official0123@gmail.com"}</span>
+                      <span className="truncate max-w-[130px] font-mono tracking-wider">{maskUpiId(upiId)}</span>
                       {copiedUpi ? (
                         <Check className="h-3 w-3 text-emerald-400 shrink-0" />
                       ) : (
@@ -969,7 +985,7 @@ export default function ClientMenu({
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
-                    <span>AMOUNT:</span>
+                    <span>AMOUNT TO PAY:</span>
                     <button
                       type="button"
                       onClick={handleCopyAmount}
@@ -993,45 +1009,86 @@ export default function ClientMenu({
 
                 {/* Helpful error-proofing tips for direct peer bank deep-linking restrictions */}
                 <div className="rounded-xl border border-rose-500/15 bg-rose-500/5 p-3 text-left space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-400">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    <span>Bank Limit or Debit Failed?</span>
+                    <span>Got a bank error or limit message?</span>
                   </div>
-                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
-                    If your payment app says <span className="text-neutral-200 font-medium">"Your money has not been debited"</span> or a limit error, it is due to bank security policies on browser deep links.
+                  <p className="font-sans text-[10px] leading-normal text-zinc-400">
+                    If GPay/PhonePe says <span className="text-neutral-200 font-medium">"Your money has not been debited"</span> or has a limit block, it is a mobile security filter on links with pre-set amounts.
                   </p>
-                  <p className="font-sans text-[10px] leading-relaxed text-zinc-400">
-                     <span className="text-amber-400 font-semibold">Easy Fix:</span> Click the UPI ID above to <strong className="text-neutral-200 font-semibold">Copy</strong> it, open your payment app manually, paste/search the UPI ID, and pay <strong className="text-neutral-200 font-semibold">₹{cartTotal.toFixed(2)}</strong>!
+                  <p className="font-sans text-[10px] leading-normal text-zinc-400">
+                    <span className="text-amber-400 font-semibold">Instant Fix:</span> Click <strong className="text-amber-400">Secure Direct Manual Pay</strong> below (Option 2) or Copy the UPI address manually, paste it in your app, and send ₹{cartTotal.toFixed(2)}!
                   </p>
                 </div>
 
                 <div className="text-[10px] text-amber-500 animate-pulse font-mono flex items-center justify-center gap-2 py-1 bg-amber-500/5 rounded-lg border border-amber-500/10">
-                  <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-                  Live payment handshake active...
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                  Live verification handshake active...
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-zinc-900/60">
+                <div className="space-y-2 pt-2 border-t border-zinc-900/60 text-left">
+                  <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-wider block mb-1">Select Payment Launch Mode:</span>
+                  
+                  {/* OPTION 1: Automatic amount (Express) */}
                   <button
                     type="button"
                     onClick={() => {
                       try {
-                        window.location.href = getUpiUrl();
+                        window.location.href = getUpiUrl(true);
                       } catch (err) {
                         console.warn("Retrying native launch failed:", err);
                       }
                     }}
-                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
-                    id="retry-upi-pay-btn"
+                    className="w-full rounded-xl bg-zinc-900 hover:bg-zinc-850 text-zinc-100 py-2 px-3 flex items-center justify-between border border-zinc-800 transition active:scale-95 cursor-pointer text-xs"
                   >
-                    Try Again / Reopen App
+                    <div className="text-left">
+                      <div className="font-bold">Option 1: Express Pay (Auto Amount)</div>
+                      <div className="text-[9px] text-zinc-400 font-sans">Pre-fills ₹{cartTotal.toFixed(2)} automatically in app</div>
+                    </div>
+                    <span className="text-zinc-500">⚡</span>
                   </button>
+
+                  {/* OPTION 2: Stripped amount (Secure / Manual entry) */}
                   <button
                     type="button"
-                    onClick={handleCancelUpiOrder}
-                    className="w-full py-2 border border-zinc-800 text-[10px] text-zinc-400 hover:text-zinc-200 rounded-lg uppercase tracking-wider font-bold transition cursor-pointer"
+                    onClick={() => {
+                      try {
+                        window.location.href = getUpiUrl(false);
+                      } catch (err) {
+                        console.warn("Retrying native launch failed:", err);
+                      }
+                    }}
+                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 py-2.5 px-3 flex items-center justify-between transition active:scale-95 cursor-pointer text-xs font-semibold"
                   >
-                    Cancel & Edit Plates
+                    <div className="text-left text-neutral-950">
+                      <div className="font-extrabold">Option 2: Secure Direct Pay (Recommended)</div>
+                      <div className="text-[9px] text-neutral-900 font-medium font-sans">No limit errors! Open app & type ₹{cartTotal.toFixed(2)} manually</div>
+                    </div>
+                    <span className="text-zinc-950">🔒</span>
                   </button>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          window.location.href = getUpiUrl(true);
+                        } catch (err) {
+                          console.warn("Retrying native launch failed:", err);
+                        }
+                      }}
+                      className="py-1.5 border border-zinc-800 text-[10px] text-zinc-300 hover:text-zinc-100 hover:bg-zinc-900 rounded-lg uppercase tracking-wider font-bold transition text-center cursor-pointer"
+                    >
+                      Reopen App
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelUpiOrder}
+                      className="py-1.5 border border-zinc-800/80 text-[10px] text-zinc-400 hover:text-rose-400 hover:bg-rose-950/10 rounded-lg uppercase tracking-wider font-bold transition text-center cursor-pointer"
+                    >
+                      Cancel Order
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
