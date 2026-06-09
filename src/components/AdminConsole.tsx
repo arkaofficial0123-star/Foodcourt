@@ -131,6 +131,7 @@ export default function AdminConsole({
   const [isStaffActive, setIsStaffActive] = useState<boolean>(true);
   const [upiIdInput, setUpiIdInput] = useState(upiId || "");
   const [isUpdatingUpiId, setIsUpdatingUpiId] = useState(false);
+  const [isEditingSavedUpiId, setIsEditingSavedUpiId] = useState(false);
 
   useEffect(() => {
     setUpiIdInput(upiId || "");
@@ -189,10 +190,11 @@ export default function AdminConsole({
     setIsWipingItems(true);
     setWipeItemsFeedback(null);
     try {
-      for (const item of items) {
+      const deletePromises = items.map(item => {
         const itemDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id);
-        await deleteDoc(itemDocRef);
-      }
+        return deleteDoc(itemDocRef);
+      });
+      await Promise.all(deletePromises);
       setWipeItemsFeedback({
         type: "success",
         text: "Success: All items have been permanently deleted from the database."
@@ -219,10 +221,11 @@ export default function AdminConsole({
     setWipeOrdersFeedback(null);
     try {
       const completedOrders = orders.filter(o => o.status === "completed");
-      for (const order of completedOrders) {
+      const deletePromises = completedOrders.map(order => {
         const orderDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "orders", order.id);
-        await deleteDoc(orderDocRef);
-      }
+        return deleteDoc(orderDocRef);
+      });
+      await Promise.all(deletePromises);
       setWipeOrdersFeedback({
         type: "success",
         text: "Success: All completed orders have been permanently cleared."
@@ -248,13 +251,23 @@ export default function AdminConsole({
     setIsResettingAnalytics(true);
     setResetAnalyticsFeedback(null);
     try {
+      // 1. Delete all completed orders in parallel so they are removed from the orders page too
+      const completedOrders = orders.filter(o => o.status === "completed");
+      const deletePromises = completedOrders.map(order => {
+        const orderDocRef = doc(db, "restaurants", restaurantId || "foodcourt", "orders", order.id);
+        return deleteDoc(orderDocRef);
+      });
+      await Promise.all(deletePromises);
+
+      // 2. Clear/reset the analytics timestamp
       const nowISO = new Date().toISOString();
       await updateDoc(doc(db, "restaurants", restaurantId || "foodcourt"), {
         analyticsResetAt: nowISO
       });
+
       setResetAnalyticsFeedback({
         type: "success",
-        text: "Success: All analytics metrics have been reset successfully."
+        text: "Success: All analytics metrics and completed orders have been reset successfully."
       });
       setShowConfirmResetAnalytics(false);
       setTimeout(() => {
@@ -315,6 +328,9 @@ export default function AdminConsole({
 
   useEffect(() => {
     fetchPasswordsAndCheckSession();
+  }, [restaurantId]);
+
+  useEffect(() => {
     if (activeTab !== "items") {
       setSelectedManageCategory(null);
       setBatchDishes([]);
@@ -568,23 +584,36 @@ export default function AdminConsole({
 
   // Statistics trackers
   const stats = useMemo(() => {
-    const { dailyStart, monthlyStart } = getCurrentRolloverTimes();
+    const { dailyStart } = getCurrentRolloverTimes();
+    const resetTime = analyticsResetAt ? new Date(analyticsResetAt).getTime() : 0;
+    
     const pendingCount = orders.filter(o => o.status === "pending").length;
     const acceptedCount = orders.filter(o => o.status === "accepted").length;
     
     const upiCount = orders.filter(o => {
       if (o.paymentMode !== "UPI") return false;
       try {
-        return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+        const t = new Date(o.createdAt).getTime();
+        return resetTime ? t >= resetTime : true;
       } catch (err) {
         return false;
       }
     }).length;
     
-    const completedToday = orders.filter(o => {
+    const completedOrders = orders.filter(o => {
       if (o.status !== "completed") return false;
       try {
-        return new Date(o.createdAt).getTime() >= dailyStart.getTime();
+        const t = new Date(o.createdAt).getTime();
+        return resetTime ? t >= resetTime : true;
+      } catch (err) {
+        return false;
+      }
+    });
+
+    const completedToday = completedOrders.filter(o => {
+      try {
+        const t = new Date(o.createdAt).getTime();
+        return t >= dailyStart.getTime();
       } catch (err) {
         return false;
       }
@@ -595,29 +624,36 @@ export default function AdminConsole({
     return {
       pendingCount,
       acceptedCount,
-      completedCount: orders.filter(o => o.status === "completed").length,
+      completedCount: completedOrders.length,
       revenueToday,
       upiCount
     };
-  }, [orders]);
+  }, [orders, analyticsResetAt]);
 
   // Order sorting: newest first for pending/accepted, completed newest first
   const sortedAndFilteredOrders = useMemo(() => {
-    const { monthlyStart } = getCurrentRolloverTimes();
+    const resetTime = analyticsResetAt ? new Date(analyticsResetAt).getTime() : 0;
     return orders
       .filter(o => {
+        // Active orders (pending or accepted) are never filtered out by daily/monthly rollover or analytics resets.
+        if (o.status === "pending" || o.status === "accepted") {
+          return o.status === orderFilter;
+        }
+
+        const orderTime = new Date(o.createdAt).getTime();
+        const afterReset = resetTime ? orderTime >= resetTime : true;
+        if (!afterReset) return false;
+
         if (orderFilter === "upi") {
-          if (o.paymentMode !== "UPI") return false;
-          try {
-            return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
-          } catch (err) {
-            return false;
-          }
+          return o.paymentMode === "UPI";
+        }
+        if (orderFilter === "completed") {
+          return o.status === "completed";
         }
         return o.status === orderFilter;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [orders, orderFilter]);
+  }, [orders, orderFilter, analyticsResetAt]);
 
   // Analytics calculations and trends analysis
   const analytics = useMemo(() => {
@@ -967,14 +1003,15 @@ export default function AdminConsole({
     setIsWipingCategories(true);
     setWipeCategoriesFeedback(null);
     try {
-      for (const cat of categories) {
-        await deleteDoc(doc(db, "restaurants", restaurantId || "foodcourt", "categories", cat.id));
-      }
-      for (const item of items) {
-        if (item.category) {
-          await setDoc(doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id), { category: "" }, { merge: true });
-        }
-      }
+      const deleteCatPromises = categories.map(cat =>
+        deleteDoc(doc(db, "restaurants", restaurantId || "foodcourt", "categories", cat.id))
+      );
+      const updateItemPromises = items
+        .filter(item => item.category)
+        .map(item =>
+          setDoc(doc(db, "restaurants", restaurantId || "foodcourt", "items", item.id), { category: "" }, { merge: true })
+        );
+      await Promise.all([...deleteCatPromises, ...updateItemPromises]);
       setSelectedManageCategory(null);
       setWipeCategoriesFeedback({
         type: "success",
@@ -1202,6 +1239,16 @@ export default function AdminConsole({
             <span>Orders</span>
           </button>
           <button
+            onClick={() => setActiveTab("analytics")}
+            id="tab-analytics"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+              activeTab === "analytics" ? "bg-white text-black shadow-md" : "text-zinc-400 hover:text-white"
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            <span>Analytics</span>
+          </button>
+          <button
             onClick={() => setActiveTab("items")}
             id="tab-items"
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
@@ -1220,16 +1267,6 @@ export default function AdminConsole({
           >
             <Settings className="h-3.5 w-3.5" />
             <span>Settings</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("analytics")}
-            id="tab-analytics"
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-sans text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-              activeTab === "analytics" ? "bg-white text-black shadow-md" : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            <span>Analytics</span>
           </button>
         </div>
 
@@ -2394,31 +2431,99 @@ export default function AdminConsole({
                         </button>
                       </div>
 
-                      <form onSubmit={handleSaveUpiId} className="rounded-xl bg-neutral-900/10 p-4 border border-zinc-900 space-y-3 text-left">
-                        <div className="space-y-1">
-                          <label className="text-zinc-500 font-mono uppercase tracking-wider text-[9px] block">Personal Destination UPI ID</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={upiIdInput}
-                              onChange={(e) => setUpiIdInput(e.target.value)}
-                              placeholder="e.g. owner@ybl, business@upi"
-                              className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors font-mono"
-                              required
-                            />
-                            <button
-                              type="submit"
-                              disabled={isUpdatingUpiId || !upiIdInput.trim()}
-                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-lg text-[10px] font-bold uppercase tracking-wider disabled:opacity-40 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                      {upiEnabled && (
+                        <>
+                          {(upiId && !isEditingSavedUpiId) ? (
+                            <div className="rounded-xl bg-zinc-950 p-4 border border-zinc-900 space-y-3 text-left" id="saved-upi-id-card">
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <span className="text-zinc-500 font-mono uppercase tracking-wider text-[9px] block">
+                                    Personal Destination UPI ID
+                                  </span>
+                                  <p className="text-sm font-mono text-amber-500 font-bold" id="saved-upi-id-text">
+                                    {upiId}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  id="edit-saved-upi-btn"
+                                  onClick={() => {
+                                    setUpiIdInput(upiId);
+                                    setIsEditingSavedUpiId(true);
+                                  }}
+                                  className="flex h-8 px-3 items-center gap-1.5 border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800 text-[10px] font-bold uppercase tracking-wider text-zinc-300 hover:text-white rounded-lg transition active:scale-95 cursor-pointer"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                  Edit ID
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 leading-normal font-sans border-t border-neutral-900/40 pt-2.5">
+                                💡 Once enabled, your customers will have two payment modes: <strong className="text-neutral-200 font-semibold">Cash</strong> and <strong className="text-amber-500 font-bold">UPI Payment</strong>. All mobile payments will credit directly into this destination UPI ID.
+                              </p>
+                            </div>
+                          ) : (
+                            <form 
+                              id="upi-id-form"
+                              onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!restaurantId) return;
+                                setIsUpdatingUpiId(true);
+                                try {
+                                  await updateDoc(doc(db, "restaurants", restaurantId), {
+                                    upiId: upiIdInput.trim()
+                                  });
+                                  setIsEditingSavedUpiId(false);
+                                  alert("Destination personal UPI ID updated successfully.");
+                                } catch (err: any) {
+                                  console.error("Failed to update UPI ID:", err);
+                                  alert("Error saving UPI ID: " + (err.message || String(err)));
+                                } finally {
+                                  setIsUpdatingUpiId(false);
+                                }
+                              }} 
+                              className="rounded-xl bg-neutral-900/10 p-4 border border-zinc-900 space-y-3 text-left"
                             >
-                              {isUpdatingUpiId ? "Saving..." : "Save ID"}
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-zinc-400 leading-normal font-sans border-t border-neutral-900/40 pt-2.5">
-                          💡 Once enabled, your customers will have two payment modes: <strong className="text-neutral-200 font-semibold">Cash</strong> and <strong className="text-amber-500 font-bold">UPI Payment</strong>. All mobile payments will credit directly into this destination UPI ID.
-                        </p>
-                      </form>
+                              <div className="space-y-1">
+                                <label className="text-zinc-500 font-mono uppercase tracking-wider text-[9px] block">
+                                  Personal Destination UPI ID
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={upiIdInput}
+                                    onChange={(e) => setUpiIdInput(e.target.value)}
+                                    placeholder="e.g. owner@ybl, business@upi"
+                                    className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 px-3 py-2 rounded-lg w-full outline-none focus:border-amber-500/60 transition-colors font-mono"
+                                    required
+                                    id="upi-id-id-input"
+                                  />
+                                  <button
+                                    type="submit"
+                                    disabled={isUpdatingUpiId || !upiIdInput.trim()}
+                                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-lg text-[10px] font-bold uppercase tracking-wider disabled:opacity-40 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                                    id="upi-id-save-btn"
+                                  >
+                                    {isUpdatingUpiId ? "Saving..." : "Save ID"}
+                                  </button>
+                                </div>
+                              </div>
+                              {upiId && (
+                                <button
+                                  type="button"
+                                  id="cancel-upi-edit-btn"
+                                  onClick={() => setIsEditingSavedUpiId(false)}
+                                  className="w-full text-center py-2 border border-zinc-800/80 hover:border-zinc-750 text-zinc-400 hover:text-zinc-205 rounded-lg text-[10px] uppercase font-bold tracking-wider cursor-pointer transition bg-zinc-900/20 hover:bg-zinc-900/40"
+                                >
+                                  Cancel Edit
+                                </button>
+                              )}
+                              <p className="text-[10px] text-zinc-400 leading-normal font-sans border-t border-neutral-900/40 pt-2.5">
+                                💡 Once enabled, your customers will have two payment modes: <strong className="text-neutral-200 font-semibold">Cash</strong> and <strong className="text-amber-500 font-bold">UPI Payment</strong>. All mobile payments will credit directly into this destination UPI ID.
+                              </p>
+                            </form>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

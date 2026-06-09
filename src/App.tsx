@@ -433,6 +433,9 @@ export default function App() {
             status: d.status,
             createdAt: d.createdAt,
             updatedAt: d.updatedAt,
+            paymentMode: d.paymentMode || "CASH",
+            paymentStatus: d.paymentStatus || "pending",
+            upiTransactionId: d.upiTransactionId || "",
           });
         });
         setOrders(fetched);

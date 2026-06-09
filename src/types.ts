@@ -35,6 +35,8 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   paymentMode?: string;
+  paymentStatus?: string;
+  upiTransactionId?: string;
 }
 
 export interface BannerSettings {

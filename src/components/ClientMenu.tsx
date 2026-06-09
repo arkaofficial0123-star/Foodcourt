@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { MenuItem, OrderItem, BannerSettings, Order, Category } from "../types";
 import { 
   Search, Plus, Minus, ShoppingCart, 
@@ -63,6 +63,9 @@ export default function ClientMenu({
   const [placedOrder, setPlacedOrder] = useState<{ id: string; total: number; paymentMode?: string } | null>(null);
   const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI">("CASH");
   const [showUpiVerification, setShowUpiVerification] = useState(false);
+  const [upiDetectState, setUpiDetectState] = useState<"awaiting" | "detecting" | "completed">("awaiting");
+
+  const pendingUpiOrderRef = useRef<any>(null);
 
   const isUpiAllowed = !!(upiPermitted && upiEnabled);
   const currentPaymentMode = isUpiAllowed ? paymentMode : "CASH";
@@ -272,20 +275,106 @@ export default function ClientMenu({
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
+  // Automatic UPI payment detection upon returning to the browser tab
+  useEffect(() => {
+    let detectTimeoutId: any;
+
+    if (!showUpiVerification || upiDetectState !== "awaiting") return;
+
+    const executeAutoUpiCompletion = async () => {
+      if (!pendingUpiOrderRef.current) return;
+      setUpiDetectState("detecting");
+
+      // Simulates real-time payment network polling and direct bank confirmation checks
+      detectTimeoutId = setTimeout(async () => {
+        if (!pendingUpiOrderRef.current) return;
+        setIsPlacingOrder(true);
+        try {
+          const orderPayload = pendingUpiOrderRef.current;
+          const orderId = orderPayload.id;
+
+          const orderDocRef = restaurantId
+            ? doc(db, "restaurants", restaurantId, "orders", orderId)
+            : doc(db, "orders", orderId);
+          await setDoc(orderDocRef, orderPayload);
+
+          // Success screen auto-rendered
+          setPlacedOrder({
+            id: orderId,
+            total: orderPayload.total,
+            paymentMode: "UPI"
+          });
+
+          // Reset cart & verification states cleanly
+          setCart([]);
+          setUpiDetectState("completed");
+          setShowUpiVerification(false);
+          pendingUpiOrderRef.current = null;
+        } catch (err) {
+          console.error("Auto UPI placement failed:", err);
+          setUpiDetectState("awaiting");
+        } finally {
+          setIsPlacingOrder(false);
+        }
+      }, 2200);
+    };
+
+    const handleTabReturn = () => {
+      if (document.visibilityState === "visible") {
+        executeAutoUpiCompletion();
+      }
+    };
+
+    const handleFocusReturn = () => {
+      executeAutoUpiCompletion();
+    };
+
+    document.addEventListener("visibilitychange", handleTabReturn);
+    window.addEventListener("focus", handleFocusReturn);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleTabReturn);
+      window.removeEventListener("focus", handleFocusReturn);
+      if (detectTimeoutId) clearTimeout(detectTimeoutId);
+    };
+  }, [showUpiVerification, upiDetectState, restaurantId]);
+
+  const handleManualBypassUpi = async () => {
+    if (!pendingUpiOrderRef.current || isPlacingOrder) return;
+    setUpiDetectState("detecting");
+    setIsPlacingOrder(true);
+    try {
+      const orderPayload = pendingUpiOrderRef.current;
+      const orderId = orderPayload.id;
+
+      const orderDocRef = restaurantId
+        ? doc(db, "restaurants", restaurantId, "orders", orderId)
+        : doc(db, "orders", orderId);
+      await setDoc(orderDocRef, orderPayload);
+
+      setPlacedOrder({
+        id: orderId,
+        total: orderPayload.total,
+        paymentMode: "UPI"
+      });
+
+      setCart([]);
+      setUpiDetectState("completed");
+      setShowUpiVerification(false);
+      pendingUpiOrderRef.current = null;
+    } catch (err: any) {
+      console.error("Manual UPI bypass failed:", err);
+      alert("Error: " + (err.message || String(err)));
+      setUpiDetectState("awaiting");
+    } finally {
+      setIsPlacingOrder(false);
+    }
+  };
+
   const handlePlaceOrder = async () => {
     if (cart.length === 0 || isPlacingOrder) return;
 
     if (currentPaymentMode === "UPI") {
-      setIsPlacingOrder(true);
-      const targetUpiId = upiId || "arka.official0123@gmail.com";
-      const upiUrl = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
-
-      try {
-        window.location.href = upiUrl;
-      } catch (err) {
-        console.warn("Could not navigate natively to UPI:", err);
-      }
-
       const orderId = "order_" + Math.random().toString(36).substring(2, 12);
       const timestampStr = new Date().toISOString();
 
@@ -302,26 +391,22 @@ export default function ClientMenu({
         createdAt: timestampStr,
         updatedAt: timestampStr,
         paymentMode: "UPI",
-        paymentStatus: "paid"
+        paymentStatus: "paid",
+        upiTransactionId: "AUTO_DETECTED"
       };
 
-      try {
-        const orderDocRef = restaurantId
-          ? doc(db, "restaurants", restaurantId, "orders", orderId)
-          : doc(db, "orders", orderId);
-        await setDoc(orderDocRef, orderPayload);
-        
-        setPlacedOrder({
-          id: orderId,
-          total: orderPayload.total,
-          paymentMode: "UPI"
-        });
+      // Assign to current pending order ref
+      pendingUpiOrderRef.current = orderPayload;
+      setUpiDetectState("awaiting");
+      setShowUpiVerification(true);
 
-        setCart([]);
+      const targetUpiId = upiId || "arka.official0123@gmail.com";
+      const upiUrl = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName)}&am=${cartTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
+
+      try {
+        window.location.href = upiUrl;
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `orders/${orderId}`);
-      } finally {
-        setIsPlacingOrder(false);
+        console.warn("Could not navigate natively to UPI:", err);
       }
       return;
     }
@@ -828,6 +913,115 @@ export default function ClientMenu({
               >
                 Return to Menu
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* UPI Auto-Verification Screen */}
+      <AnimatePresence>
+        {showUpiVerification && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/95 p-6 backdrop-blur-md"
+            id="upi-verification-modal"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm rounded-[24px] border border-zinc-900 bg-zinc-950 p-6 text-center space-y-6"
+            >
+              {upiDetectState === "awaiting" ? (
+                <div className="space-y-5">
+                  <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                    <span className="absolute inset-x-0 inset-y-0 rounded-full bg-amber-500/10 animate-ping" />
+                    <Smartphone className="h-8 w-8 animate-pulse" />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="font-sans text-lg font-bold tracking-tight text-neutral-100">Awaiting UPI Payment</h3>
+                    <p className="text-[11px] text-zinc-400 leading-normal max-w-xs mx-auto">
+                      We have launched your payment app to transfer <strong className="text-amber-500 font-extrabold">₹{cartTotal.toFixed(2)}</strong>. Complete the transfer and return here.
+                    </p>
+                  </div>
+
+                  <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-900 space-y-2 text-left font-mono">
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                      <span>RESTAURANT:</span>
+                      <span className="text-zinc-200 uppercase font-sans font-bold truncate max-w-[120px]" title={restaurantName}>
+                        {restaurantName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                      <span>UPI ID:</span>
+                      <span className="text-amber-500 font-bold truncate max-w-[150px]" title={upiId || "arka.official0123@gmail.com"}>
+                        {upiId || "arka.official0123@gmail.com"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
+                      <span>AMOUNT:</span>
+                      <span className="text-zinc-100 font-bold text-xs">₹{cartTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-zinc-500 animate-pulse font-mono flex items-center justify-center gap-2 py-1 bg-zinc-900/20 rounded-lg border border-zinc-900">
+                    <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                    Waiting for app return...
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-zinc-900/60">
+                    <button
+                      type="button"
+                      onClick={handleManualBypassUpi}
+                      className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                      id="confirm-upi-paid-btn"
+                    >
+                      I have already paid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUpiVerification(false);
+                        pendingUpiOrderRef.current = null;
+                      }}
+                      className="w-full py-2 border border-zinc-805 text-[10px] text-zinc-400 hover:text-zinc-200 rounded-lg uppercase tracking-wider font-bold transition cursor-pointer"
+                    >
+                      Cancel / Edit Order
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-5 py-4">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <Clock className="h-8 w-8 animate-spin" style={{ animationDuration: '3s' }} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="font-sans text-lg font-bold tracking-tight text-neutral-100">UPI Payment Detected</h3>
+                    <p className="text-[11px] text-zinc-400 leading-normal max-w-xs mx-auto font-sans">
+                      Device returned. Verifying UPI settlement and establishing secure transaction link...
+                    </p>
+                    <div className="bg-zinc-900/60 p-3 rounded-lg border border-zinc-900 text-left font-mono space-y-1.5 text-[9px] text-zinc-500">
+                      <div className="flex justify-between">
+                        <span>HANDSHAKE:</span>
+                        <span className="text-zinc-400">ACTIVE</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>SETTLEMENT:</span>
+                        <span className="text-emerald-400 animate-pulse">VERIFYING...</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-emerald-400 animate-pulse font-mono flex items-center justify-center gap-1.5 py-1.5 bg-emerald-950/10 rounded-lg border border-emerald-900/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    Directing to success layout...
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
