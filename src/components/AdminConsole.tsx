@@ -593,7 +593,7 @@ export default function AdminConsole({
     const upiCount = orders.filter(o => {
       if (o.paymentMode !== "UPI") return false;
       try {
-        const t = new Date(o.createdAt).getTime();
+        const t = new Date(o.status === "completed" ? (o.updatedAt || o.createdAt) : o.createdAt).getTime();
         return resetTime ? t >= resetTime : true;
       } catch (err) {
         return false;
@@ -603,7 +603,7 @@ export default function AdminConsole({
     const completedOrders = orders.filter(o => {
       if (o.status !== "completed") return false;
       try {
-        const t = new Date(o.createdAt).getTime();
+        const t = new Date(o.updatedAt || o.createdAt).getTime();
         return resetTime ? t >= resetTime : true;
       } catch (err) {
         return false;
@@ -612,7 +612,7 @@ export default function AdminConsole({
 
     const completedToday = completedOrders.filter(o => {
       try {
-        const t = new Date(o.createdAt).getTime();
+        const t = new Date(o.updatedAt || o.createdAt).getTime();
         return t >= dailyStart.getTime();
       } catch (err) {
         return false;
@@ -640,7 +640,7 @@ export default function AdminConsole({
           return o.status === orderFilter;
         }
 
-        const orderTime = new Date(o.createdAt).getTime();
+        const orderTime = new Date(o.status === "completed" ? (o.updatedAt || o.createdAt) : o.createdAt).getTime();
         const afterReset = resetTime ? orderTime >= resetTime : true;
         if (!afterReset) return false;
 
@@ -652,7 +652,11 @@ export default function AdminConsole({
         }
         return o.status === orderFilter;
       })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => {
+        const timeA = new Date(a.status === "completed" ? (a.updatedAt || a.createdAt) : a.createdAt).getTime();
+        const timeB = new Date(b.status === "completed" ? (b.updatedAt || b.createdAt) : b.createdAt).getTime();
+        return timeB - timeA;
+      });
   }, [orders, orderFilter, analyticsResetAt]);
 
   // Analytics calculations and trends analysis
@@ -664,7 +668,7 @@ export default function AdminConsole({
       if (o.status !== "completed") return false;
       if (resetTime) {
         try {
-          return new Date(o.createdAt).getTime() >= resetTime;
+          return new Date(o.updatedAt || o.createdAt).getTime() >= resetTime;
         } catch (e) {
           return false;
         }
@@ -676,7 +680,7 @@ export default function AdminConsole({
     const revenueToday = completedOrders
       .filter(o => {
         try {
-          return new Date(o.createdAt).getTime() >= dailyStart.getTime();
+          return new Date(o.updatedAt || o.createdAt).getTime() >= dailyStart.getTime();
         } catch (e) {
           return false;
         }
@@ -686,7 +690,7 @@ export default function AdminConsole({
     const revenueThisMonth = completedOrders
       .filter(o => {
         try {
-          return new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          return new Date(o.updatedAt || o.createdAt).getTime() >= monthlyStart.getTime();
         } catch (e) {
           return false;
         }
@@ -696,7 +700,7 @@ export default function AdminConsole({
     const monthlyUpiRevenue = completedOrders
       .filter(o => {
         try {
-          const isThisMonth = new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          const isThisMonth = new Date(o.updatedAt || o.createdAt).getTime() >= monthlyStart.getTime();
           return isThisMonth && o.paymentMode === "UPI";
         } catch (e) {
           return false;
@@ -707,7 +711,7 @@ export default function AdminConsole({
     const monthlyCashRevenue = completedOrders
       .filter(o => {
         try {
-          const isThisMonth = new Date(o.createdAt).getTime() >= monthlyStart.getTime();
+          const isThisMonth = new Date(o.updatedAt || o.createdAt).getTime() >= monthlyStart.getTime();
           return isThisMonth && (o.paymentMode === "CASH" || !o.paymentMode);
         } catch (e) {
           return false;
@@ -718,7 +722,7 @@ export default function AdminConsole({
     const totalRevenue = completedOrders
       .filter(o => {
         try {
-          return new Date(o.createdAt).getTime() >= yearlyStart.getTime();
+          return new Date(o.updatedAt || o.createdAt).getTime() >= yearlyStart.getTime();
         } catch (e) {
           return false;
         }
@@ -730,7 +734,7 @@ export default function AdminConsole({
     completedOrders
       .filter(order => {
         try {
-          return new Date(order.createdAt).getTime() >= monthlyStart.getTime();
+          return new Date(order.updatedAt || order.createdAt).getTime() >= monthlyStart.getTime();
         } catch (e) {
           return false;
         }
@@ -773,7 +777,7 @@ export default function AdminConsole({
       }
       tablePerformance[o.tableId].count++;
       if (o.status === "completed") {
-        const orderTime = new Date(o.createdAt).getTime();
+        const orderTime = new Date(o.updatedAt || o.createdAt).getTime();
         const afterReset = resetTime ? orderTime >= resetTime : true;
         if (afterReset) {
           tablePerformance[o.tableId].total += o.total;
@@ -793,7 +797,7 @@ export default function AdminConsole({
 
       const monthTotal = completedOrders.filter(o => {
         try {
-          const t = new Date(o.createdAt).getTime();
+          const t = new Date(o.updatedAt || o.createdAt).getTime();
           return t >= monthStart.getTime() && t < monthEnd.getTime();
         } catch (e) {
           return false;
