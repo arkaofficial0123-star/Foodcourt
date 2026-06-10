@@ -271,14 +271,15 @@ export default function ClientMenu({
   }, [cart]);
 
   // Helper to generate the UPI Payment link cleanly
-  const getUpiUrl = (includeAmount = true) => {
+  const getUpiUrl = (includeAmount = false) => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
     // Keep targetUpiId raw (do not encode '@' to '%40') as it breaks regex parsing pattern on standard apps like Google Pay (GPay) and PhonePe
-    let url = `upi://pay?pa=${targetUpiId}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
     if (includeAmount) {
-      url += `&am=${cartTotal.toFixed(2)}`;
+      return `upi://pay?pa=${targetUpiId}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}&am=${cartTotal.toFixed(2)}`;
     }
-    return url;
+    // Bare minimum clean link to completely bypass P2P bank limits and pre-populated form errors on GPAY/PhonePe.
+    // This launches GPay with just the recipient UPI ID so the customer can enter the exact amount manually.
+    return `upi://pay?pa=${targetUpiId}`;
   };
 
   // Real-time Firestore state sync loop
@@ -990,11 +991,11 @@ export default function ClientMenu({
                 {/* Direct info for users who get bank limits/pre-filled value errors */}
                 <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-3 text-left space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-400">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                    <span>Using GPay, PhonePe, or Paytm?</span>
+                    <CheckCircle className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span>Exceeded Bank limit bypass active</span>
                   </div>
                   <p className="font-sans text-[10px] leading-normal text-zinc-300">
-                    If your bank app shows a limit error on pre-filled amounts, <span className="text-amber-400 font-bold">simply COPY the UPI address and exact amount above</span>, open your UPI App, and complete the transfer!
+                    To bypass P2P bank limit restrictions, we launch GPAY/PhonePe with <span className="text-amber-400 font-bold">just the UPI ID</span>. Simply type <span className="text-amber-400 font-bold">₹{cartTotal.toFixed(2)}</span> after redirecting!
                   </p>
                 </div>
 
@@ -1003,7 +1004,7 @@ export default function ClientMenu({
                     type="button"
                     onClick={() => {
                       try {
-                        window.location.href = getUpiUrl(true);
+                        window.location.href = getUpiUrl(false);
                       } catch (err) {
                         console.warn("Retrying native launch failed:", err);
                       }
