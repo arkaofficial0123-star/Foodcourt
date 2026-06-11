@@ -84,6 +84,25 @@ export default function ClientMenu({
   const isUpiAllowed = !!(upiPermitted && upiEnabled);
   const currentPaymentMode = isUpiAllowed ? paymentMode : "CASH";
 
+  // Secret 5-tap sequence on Logo to access Staff Mode discretely
+  const [logoClicks, setLogoClicks] = useState(0);
+  const [lastClickTime, setLastClickTime] = useState(0);
+
+  const handleLogoClick = () => {
+    const now = Date.now();
+    if (now - lastClickTime < 1500) {
+      const nextClicks = logoClicks + 1;
+      setLogoClicks(nextClicks);
+      if (nextClicks >= 5) {
+        setLogoClicks(0);
+        onGoToAdmin();
+      }
+    } else {
+      setLogoClicks(1);
+    }
+    setLastClickTime(now);
+  };
+
   // Dynamically prepare the category list with NO "Others" category pill
   const renderedCategories = useMemo(() => {
     // Determine the most recent order timestamp for each category
@@ -271,15 +290,13 @@ export default function ClientMenu({
   }, [cart]);
 
   // Helper to generate the UPI Payment link cleanly
-  const getUpiUrl = (includeAmount = false) => {
+  const getUpiUrl = (includeAmount = true) => {
     const targetUpiId = (upiId || "arka.official0123@gmail.com").trim();
-    // Keep targetUpiId raw (do not encode '@' to '%40') as it breaks regex parsing pattern on standard apps like Google Pay (GPay) and PhonePe
+    let url = `upi://pay?pa=${encodeURIComponent(targetUpiId)}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}`;
     if (includeAmount) {
-      return `upi://pay?pa=${targetUpiId}&pn=${encodeURIComponent(restaurantName || "Restaurant")}&cu=INR&tn=${encodeURIComponent("Table " + tableId + " Order")}&am=${cartTotal.toFixed(2)}`;
+      url += `&am=${cartTotal.toFixed(2)}`;
     }
-    // Bare minimum clean link to completely bypass P2P bank limits and pre-populated form errors on GPAY/PhonePe.
-    // This launches GPay with just the recipient UPI ID so the customer can enter the exact amount manually.
-    return `upi://pay?pa=${targetUpiId}`;
+    return url;
   };
 
   // Real-time Firestore state sync loop
@@ -492,7 +509,8 @@ export default function ClientMenu({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <div 
-              className="w-7.5 h-7.5 bg-white flex items-center justify-center rounded-md shadow-md shrink-0 select-none"
+              onClick={handleLogoClick}
+              className="w-7.5 h-7.5 bg-white flex items-center justify-center rounded-md shadow-md shrink-0 cursor-pointer active:scale-95 transition-transform select-none"
               title={restaurantName}
             >
               <span className="text-black font-black text-sm">{restaurantName ? restaurantName.charAt(0).toUpperCase() : "F"}</span>
@@ -947,39 +965,8 @@ export default function ClientMenu({
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
-                    <span>UPI ADDRESS:</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyUpi}
-                      className="flex items-center gap-1.5 rounded bg-zinc-950 px-2 py-1 text-amber-500 hover:text-amber-400 font-bold cursor-pointer active:scale-95 transition-all outline-none"
-                      title="Click to copy UPI ID"
-                    >
-                      <span className="truncate max-w-[130px] font-mono tracking-wider text-[11px] font-bold text-amber-500">
-                        {upiId || "arka.official0123@gmail.com"}
-                      </span>
-                      {copiedUpi ? (
-                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
                     <span>AMOUNT TO PAY:</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyAmount}
-                      className="flex items-center gap-1.5 rounded bg-zinc-950 px-2 py-1 font-bold cursor-pointer active:scale-95 transition-all outline-none text-zinc-100"
-                      title="Click to copy exact amount"
-                    >
-                      <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
-                      {copiedAmount ? (
-                        <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-zinc-400 shrink-0" />
-                      )}
-                    </button>
+                    <span className="text-zinc-100 text-xs font-sans font-extrabold">₹{cartTotal.toFixed(2)}</span>
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900/60 pt-2">
@@ -988,30 +975,19 @@ export default function ClientMenu({
                   </div>
                 </div>
 
-                {/* Direct info for users who get bank limits/pre-filled value errors */}
-                <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-3 text-left space-y-1">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-400">
-                    <CheckCircle className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                    <span>Exceeded Bank limit bypass active</span>
-                  </div>
-                  <p className="font-sans text-[10px] leading-normal text-zinc-300">
-                    To bypass P2P bank limit restrictions, we launch GPAY/PhonePe with <span className="text-amber-400 font-bold">just the UPI ID</span>. Simply type <span className="text-amber-400 font-bold">₹{cartTotal.toFixed(2)}</span> after redirecting!
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 pt-3">
+                <div className="grid grid-cols-2 gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
                       try {
-                        window.location.href = getUpiUrl(false);
+                        window.location.href = getUpiUrl(true);
                       } catch (err) {
                         console.warn("Retrying native launch failed:", err);
                       }
                     }}
-                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer hover:shadow-lg hover:shadow-amber-500/10"
+                    className="w-full rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 font-sans text-xs font-bold uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
                   >
-                    Launch App
+                    Try Again
                   </button>
                   <button
                     type="button"
