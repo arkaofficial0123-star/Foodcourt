@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import platformConfig from "../firebase-applet-config.json";
 
 // Default public client configuration fallback for zero-configuration deployments (e.g. Vercel)
 const DEFAULT_FIREBASE_CONFIG = {
@@ -13,6 +12,9 @@ const DEFAULT_FIREBASE_CONFIG = {
   storageBucket: "trusty-aegis-vtgzl.firebasestorage.app",
   messagingSenderId: "448117199497"
 };
+
+// Ensure fallback doesn't crash if config is missing
+const platformConfig = DEFAULT_FIREBASE_CONFIG;
 
 // Standard production-ready setup: check for environment variables first,
 // and gracefully fall back to the workspace configuration.

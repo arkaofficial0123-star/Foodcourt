@@ -126,6 +126,8 @@ export default function SuperAdminConsole({
   const [globalAdminPassword, setGlobalAdminPassword] = useState("1234");
   const [newGlobalAdminId, setNewGlobalAdminId] = useState("");
   const [newGlobalAdminPassword, setNewGlobalAdminPassword] = useState("");
+  const [newSignupLink, setNewSignupLink] = useState("");
+  const [newSignupDetails, setNewSignupDetails] = useState("");
   const [isUpdatingGlobalSettings, setIsUpdatingGlobalSettings] =
     useState(false);
   const [globalSettingsSuccess, setGlobalSettingsSuccess] = useState("");
@@ -269,14 +271,26 @@ export default function SuperAdminConsole({
   // Dynamic global security sync
   useEffect(() => {
     if (!isAuthenticated) return;
-    const unsub = onSnapshot(doc(db, "settings", "security"), (snap) => {
+    const unsubSec = onSnapshot(doc(db, "settings", "security"), (snap) => {
       if (snap.exists()) {
         const d = snap.data();
         setGlobalAdminId(d.superAdminId || "ADMIN");
         setGlobalAdminPassword(d.superAdminPassword || "1234");
       }
     });
-    return unsub;
+    
+    const unsubSignup = onSnapshot(doc(db, "settings", "signup"), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setNewSignupLink(d.link || "");
+        setNewSignupDetails(d.details || "");
+      }
+    });
+
+    return () => {
+      unsubSec();
+      unsubSignup();
+    };
   }, [isAuthenticated]);
 
   // Subscribe to all restaurant tenants
@@ -945,6 +959,31 @@ export default function SuperAdminConsole({
     }
   };
 
+  const handleSaveSignupConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGlobalSettingsSuccess("");
+    setGlobalSettingsError("");
+    setIsUpdatingGlobalSettings(true);
+    try {
+      await setDoc(doc(db, "settings", "signup"), {
+        link: newSignupLink,
+        details: newSignupDetails
+      }, { merge: true });
+
+      setGlobalSettingsSuccess("Signup Configuration updated successfully!");
+      setTimeout(() => {
+        setGlobalSettingsSuccess("");
+      }, 2000);
+    } catch (err: any) {
+      setGlobalSettingsError("Configuration save error: " + err.message);
+      setTimeout(() => {
+        setGlobalSettingsError("");
+      }, 2000);
+    } finally {
+      setIsUpdatingGlobalSettings(false);
+    }
+  };
+
   const filteredRestaurants = restaurants.filter(
     (r) =>
       r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1415,6 +1454,55 @@ export default function SuperAdminConsole({
                   </button>
                 </div>
               </form>
+              
+              <div className="mt-8 border-t border-zinc-900 pt-6 space-y-4">
+                <div className="space-y-1">
+                  <h3 className="font-serif italic text-lg text-white">
+                    Signup Link Configuration
+                  </h3>
+                  <p className="text-zinc-500 text-[10px] font-sans">
+                    Configure the details and external link for the 'Create New Account' process.
+                  </p>
+                </div>
+                
+                <form onSubmit={handleSaveSignupConfig} className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                        Signup Details
+                      </label>
+                      <textarea
+                        placeholder="e.g. Please fill out our external form to register your restaurant..."
+                        value={newSignupDetails}
+                        onChange={(e) => setNewSignupDetails(e.target.value)}
+                        className="w-full h-24 bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 animate-none resize-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-mono text-[9px] uppercase tracking-wider text-zinc-500">
+                        External Registration Link
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="e.g. https://forms.google.com/..."
+                        value={newSignupLink}
+                        onChange={(e) => setNewSignupLink(e.target.value)}
+                        className="w-full bg-zinc-900/40 border border-zinc-900 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-650 focus:outline-none focus:border-zinc-500 animate-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="submit"
+                      disabled={isUpdatingGlobalSettings}
+                      className="rounded-lg bg-sky-500 hover:bg-sky-600 text-black px-6 py-2 text-xs font-bold uppercase tracking-wider transition-all shadow active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isUpdatingGlobalSettings ? "Saving..." : "Save Details"}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </motion.div>
           )}
 

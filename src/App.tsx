@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { MenuItem, Order, BannerSettings, Category } from "./types";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, onSnapshot, setDoc, query, where } from "firebase/firestore";
@@ -11,8 +11,8 @@ import TableSelector from "./components/TableSelector";
 import ClientMenu from "./components/ClientMenu";
 import AdminConsole from "./components/AdminConsole";
 import SuperAdminConsole from "./components/SuperAdminConsole";
-import { Loader, Store, Shield, ArrowRight, Eye, EyeOff } from "lucide-react";
-import { motion } from "motion/react";
+import { Loader, Store, Shield, ArrowRight, Eye, EyeOff, Menu, X, ChevronRight, Sparkles, Check, ExternalLink } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 
 // Helper to parse the initial route synchronously to prevent initial render flicker/delay
 const getInitialRouteState = () => {
@@ -163,6 +163,90 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [loginSuccess, setLoginSuccess] = useState("");
   const [showFormUserId, setShowFormUserId] = useState(false);
+  const [isNavOpen, setIsNavOpen] = useState(false);
+  const [heroImageIndex, setHeroImageIndex] = useState(0);
+
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [signupLink, setSignupLink] = useState("");
+  const [signupDetails, setSignupDetails] = useState("");
+
+  // Sync signup details
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "signup"), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setSignupLink(d.link || "");
+        setSignupDetails(d.details || "");
+      }
+    });
+    return unsub;
+  }, []);
+
+  const HERO_IMAGES = [
+    "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=2000&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=2000&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1552566626-52f8b828add9?q=80&w=2000&auto=format&fit=crop",
+  ];
+
+  // Custom slow-fast-slow smooth scroll function
+  const customSmoothScrollTo = (targetElement: Element) => {
+    const startY = window.pageYOffset;
+    const rect = targetElement.getBoundingClientRect();
+    const targetY = startY + rect.top;
+    const distance = targetY - startY;
+    const duration = 1500; // 1.5s smooth custom scroll
+    let startTimestamp: number | null = null;
+    
+    // easeInOutCubic
+    const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      const easeProgress = easeInOutCubic(progress);
+      
+      window.scrollTo(0, startY + distance * easeProgress);
+      
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      }
+    };
+    window.requestAnimationFrame(step);
+  };
+
+  // Hero background image crossfader
+  useEffect(() => {
+    if (restaurantId) return;
+    const interval = setInterval(() => {
+      setHeroImageIndex((prev) => (prev + 1) % HERO_IMAGES.length);
+    }, 2500); 
+    return () => clearInterval(interval);
+  }, [restaurantId]);
+
+  // Auto-scroller every 3 seconds
+  useEffect(() => {
+    if (restaurantId) return;
+    const autoScroll = setInterval(() => {
+      const sections = document.querySelectorAll('.saas-section');
+      let currentSectionIndex = -1;
+      
+      sections.forEach((sec, idx) => {
+        const rect = sec.getBoundingClientRect();
+        // Identify which section is currently active in the viewport
+        if (rect.top <= window.innerHeight / 2 && rect.bottom >= window.innerHeight / 2) {
+          currentSectionIndex = idx;
+        }
+      });
+
+      if (currentSectionIndex !== -1 && currentSectionIndex < sections.length - 1) {
+        customSmoothScrollTo(sections[currentSectionIndex + 1]);
+      } else if (currentSectionIndex === sections.length - 1) {
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // Return to top
+      }
+    }, 3000); 
+    return () => clearInterval(autoScroll);
+  }, [restaurantId]);
 
   // Synchronously listen to dynamic super admin gatekeeper credentials
   useEffect(() => {
@@ -574,7 +658,7 @@ export default function App() {
   if (isDataLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#050505] font-sans text-zinc-100 relative overflow-hidden" id="app-database-loader">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-zinc-900/30 rounded-full blur-[90px] pointer-events-none animate-pulse" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900/40 to-transparent rounded-full pointer-events-none animate-pulse" />
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -635,100 +719,623 @@ export default function App() {
   // 2. ROOT SaaS DIRECTORY SELECTOR VIEW
   if (!restaurantId) {
     return (
-      <div className="flex min-h-screen flex-col bg-[#050505] font-sans text-zinc-100 relative overflow-hidden" id="saas-homepage">
-        {/* Subtle glowing halo backgrounds */}
-        <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-900/10 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-zinc-950 rounded-full blur-[100px] pointer-events-none" />
+      <div className="flex flex-col bg-[#050505] font-sans text-zinc-100 relative overflow-x-hidden w-full" id="saas-homepage">
+        
+        {/* Dynamic Abstract Background Base */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <AnimatePresence mode="popLayout">
+            <motion.img 
+              key={heroImageIndex}
+              initial={{ opacity: 0, scale: 1.05 }}
+              animate={{ opacity: 0.15, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.5, ease: "easeInOut" }}
+              src={HERO_IMAGES[heroImageIndex]} 
+              alt="Background" 
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          </AnimatePresence>
+          <div className="absolute top-0 w-full h-[500px] bg-gradient-to-b from-black via-[#050505]/90 to-transparent z-0" />
+          <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/10 to-transparent rounded-full pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500/10 to-transparent rounded-full pointer-events-none" />
+        </div>
 
-        <header className="max-w-7xl mx-auto w-full px-8 py-5 flex items-center justify-between border-b border-zinc-900/60 z-10 bg-[#050505]/80 backdrop-blur-md sticky top-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white flex items-center justify-center rounded-xl shadow-lg shrink-0">
-              <span className="text-black font-black text-xl">F</span>
-            </div>
-            <div>
-              <span className="font-serif italic font-bold text-lg text-white">Foodcourt</span>
-              <span className="ml-1.5 rounded-md bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 font-mono text-[8px] font-bold text-zinc-500 uppercase tracking-widest">
-                SaaS System
-              </span>
-            </div>
+        <header className="fixed top-0 w-full px-6 py-6 flex items-center justify-between z-30 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-sm pointer-events-none">
+          <div className="flex items-center gap-4 pointer-events-auto">
+            <button 
+              onClick={() => setIsNavOpen(!isNavOpen)}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors backdrop-blur-md border border-white/5 bg-black/40"
+            >
+              <Menu className="w-5 h-5 text-white" />
+            </button>
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="flex items-center gap-2"
+            >
+               <span className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-600 rounded-lg flex items-center justify-center font-serif font-black text-black">F</span>
+               <span className="font-serif italic font-bold text-xl tracking-tight text-white shadow-black/50 drop-shadow-md">Foodcourt</span>
+            </motion.div>
           </div>
+
+          <motion.div
+             initial={{ opacity: 0, x: 20 }}
+             animate={{ opacity: 1, x: 0 }}
+             transition={{ delay: 0.2 }}
+             className="pointer-events-auto flex items-center gap-4"
+          >
+             <button onClick={() => setIsLoginModalOpen(true)} className="text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-white transition-colors cursor-pointer hidden sm:block">
+                Log In
+             </button>
+             <button onClick={() => setIsSignupModalOpen(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 text-white cursor-pointer">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 hidden sm:block" />
+                Sign Up
+             </button>
+          </motion.div>
         </header>
 
-        <main className="flex-grow max-w-4xl mx-auto w-full px-8 pt-6 pb-16 flex flex-col items-center justify-center -mt-6 sm:-mt-12 z-10 space-y-6">
-          <div className="text-center space-y-2">
-            <h2 className="font-serif italic text-4xl sm:text-5xl text-white tracking-tight leading-normal">
-              Foodcourt
-            </h2>
-            <p className="text-sm text-zinc-500 font-sans">
-              Welcome to Foodcourt
-            </p>
-          </div>
-
-          {/* HIGH-CONTRAST SECURE LOGIN TERMINAL */}
-          <div className="w-full max-w-md rounded-3xl border border-zinc-900 bg-[#0a0a0c] p-6 sm:p-8 shadow-2xl relative space-y-6">
-            <div className="space-y-1 text-center border-b border-zinc-900 pb-4">
-              <h3 className="font-serif italic text-2xl text-white">Credentials</h3>
-              {loginError ? (
-                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-rose-500 font-bold animate-pulse">
-                  {loginError}
-                </p>
-              ) : loginSuccess ? (
-                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-500 font-bold animate-pulse">
-                  {loginSuccess}
-                </p>
-              ) : (
-                <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">
-                  Provide credentials below
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleGatewayLogin} className="space-y-4">
-              {/* ID IDENTITY INPUT */}
-              <div className="space-y-1 text-left">
-                <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 block">ID Identity</label>
-                <div className="relative">
-                  <input
-                    type={showFormUserId ? "text" : "password"}
-                    required
-                    placeholder="ID Identity"
-                    value={formUserId}
-                    onChange={(e) => setFormUserId(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-900 rounded-xl pl-4 pr-12 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:border-indigo-650"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowFormUserId(!showFormUserId)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors p-1"
-                    title={showFormUserId ? "Hide ID" : "Show ID"}
-                  >
-                    {showFormUserId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {/* Interactive Side Menu Overlay */}
+        <AnimatePresence>
+          {isNavOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsNavOpen(false)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+              />
+              <motion.div
+                initial={{ x: "-100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "-100%" }}
+                transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                className="fixed left-0 top-0 bottom-0 w-80 sm:w-96 bg-[#0a0a0c]/90 backdrop-blur-xl border-r border-white/10 z-50 p-8 flex flex-col overflow-y-auto"
+              >
+                <div className="flex justify-between items-center mb-12 shrink-0">
+                  <span className="font-serif italic font-bold text-2xl text-white">Menu</span>
+                  <button onClick={() => setIsNavOpen(false)} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                    <X className="w-5 h-5 text-zinc-400" />
                   </button>
                 </div>
-              </div>
+                
+                <div className="flex-1 overflow-y-auto pr-2">
+                  <nav className="flex flex-col gap-6 mb-12">
+                    {["Discover Hubs", "Partner Program", "Enterprise Logistics", "Help & Support"].map((item, i) => (
+                      <motion.a 
+                        key={item}
+                        href="#"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 + (i * 0.05) }}
+                        className="text-xl sm:text-2xl font-serif text-zinc-400 hover:text-white hover:translate-x-2 transition-all flex items-center justify-between group"
+                      >
+                        {item}
+                        <ChevronRight className="w-5 h-5 opacity-0 group-hover:opacity-100 text-amber-500 transition-opacity" />
+                      </motion.a>
+                    ))}
+                  </nav>
 
-              {/* PASSWORD INPUT */}
-              <div className="space-y-1 text-left">
-                <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 block">Secret Passkey</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Secret Passkey"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-900 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-800 focus:outline-none focus:border-indigo-650 font-mono"
-                />
-              </div>
 
-              <button
-                type="submit"
-                className="w-full bg-zinc-100 hover:bg-white text-black font-sans text-xs font-bold uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-md shadow-zinc-950/20 font-black mt-3 block"
+                </div>
+
+                <div className="mt-6 shrink-0 pt-4 border-t border-white/5">
+                   <p className="text-[10px] text-zinc-600 font-mono text-center">v2.1.0-secure.build</p>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        <main className="flex flex-col relative z-10 w-full pt-16">
+          
+          {/* Scroll Section 1 - Hero */}
+          <section className="saas-section min-h-[90vh] flex items-center justify-center px-4 sm:px-8 relative w-full pb-20">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
+              className="w-full max-w-5xl mx-auto flex flex-col items-center text-center gap-8"
+            >
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 1, delay: 0.5 }}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md text-[10px] sm:text-xs uppercase tracking-widest text-zinc-300 font-mono"
               >
-                PROCEED
-              </button>
-            </form>
-          </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                System Online & Ready
+              </motion.div>
+              
+              <motion.h1 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, delay: 0.6 }}
+                className="text-5xl sm:text-7xl lg:text-[100px] font-serif italic text-white leading-[0.95] drop-shadow-2xl px-4"
+              >
+                Join with us.<br/>
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-400 to-orange-500 pb-2 inline-block">
+                  Build the future.
+                </span>
+              </motion.h1>
+              
+              <motion.p 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, delay: 0.7 }}
+                className="text-lg sm:text-xl text-zinc-400 font-sans max-w-2xl mx-auto leading-relaxed drop-shadow-md px-4"
+              >
+                Experience seamless multi-tenant orchestration with our high-performance SaaS gateway. Build, manage, and scale your restaurant ecosystem instantly.
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, delay: 0.9 }}
+                className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-zinc-500"
+              >
+                <span className="text-[10px] uppercase font-mono tracking-widest">Scroll to explore</span>
+                <motion.div 
+                  animate={{ y: [0, 10, 0] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                  className="w-px h-12 bg-gradient-to-b from-amber-500/50 to-transparent"
+                />
+              </motion.div>
+            </motion.div>
+          </section>
+
+          {/* Scroll Section 2 - Features with Images */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full border-t border-white/5 bg-black/40 backdrop-blur-sm">
+            <div className="w-full max-w-6xl mx-auto grid md:grid-cols-2 gap-16 items-center">
+              <motion.div 
+                initial={{ opacity: 0, x: -40 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="space-y-6"
+              >
+                <h2 className="text-4xl sm:text-5xl font-serif italic text-white drop-shadow-lg">
+                  Unified <span className="text-amber-500">Command</span>
+                </h2>
+                <p className="text-zinc-400 text-lg leading-relaxed">
+                  Monitor all your branches from a single panoramic display. Get real-time updates on orders, staff performance, and revenue across multiple locations without missing a beat.
+                </p>
+                <ul className="space-y-4 pt-4">
+                  {[
+                    "Live revenue streaming & tracking",
+                    "Deep-dive analytics per location",
+                    "Instant menu deployments"
+                  ].map((feature, idx) => (
+                    <motion.li 
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: 0.3 + (idx * 0.1) }}
+                      className="flex items-center gap-3 text-white text-sm sm:text-base font-medium"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      {feature}
+                    </motion.li>
+                  ))}
+                </ul>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, rotateX: 20 }}
+                whileInView={{ opacity: 1, scale: 1, rotateX: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className="relative rounded-3xl overflow-hidden border border-white/10 shadow-[0_0_80px_-20px_rgba(245,158,11,0.2)] group"
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />
+                <img 
+                  src="https://images.unsplash.com/photo-1552566626-52f8b828add9?q=80&w=1200&auto=format&fit=crop" 
+                  alt="Restaurant Terminal" 
+                  className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-1000"
+                />
+                <div className="absolute bottom-6 left-6 right-6 z-20">
+                  <div className="bg-black/50 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex justify-between items-center">
+                    <div>
+                      <p className="text-white font-bold">Total Revenue</p>
+                      <p className="text-amber-400 font-mono text-sm">+24.5% Today</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-serif italic text-white">$12,480</p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </section>
+
+          {/* Scroll Section 3 - Dynamic Operations with Parallaxing Images */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full border-t border-white/5 bg-black/60 backdrop-blur-md">
+            <div className="w-full max-w-6xl mx-auto flex flex-col items-center">
+              
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.8 }}
+                className="text-center mb-16 space-y-4"
+              >
+                <h2 className="text-4xl sm:text-6xl font-serif italic text-white drop-shadow-lg">
+                  Symphony of <span className="text-emerald-500">Service</span>
+                </h2>
+                <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
+                  Watch your kitchen orchestrate high-volume demands with precision algorithms. The magic happens behind the scenes, visually represented below.
+                </p>
+              </motion.div>
+
+              <div className="grid md:grid-cols-3 gap-8 w-full mt-8">
+                {[
+                  {
+                    img: "https://images.unsplash.com/photo-1556740758-90de374c12ad?q=80&w=800&auto=format&fit=crop",
+                    title: "Automated Kiosks",
+                    delay: 0.1
+                  },
+                  {
+                    img: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=800&auto=format&fit=crop",
+                    title: "Kitchen Routing",
+                    delay: 0.3
+                  },
+                  {
+                    img: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=800&auto=format&fit=crop",
+                    title: "Table Insights",
+                    delay: 0.5
+                  }
+                ].map((block, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 50 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-50px" }}
+                    transition={{ duration: 0.8, delay: block.delay, ease: "easeOut" }}
+                    className="group relative rounded-3xl overflow-hidden aspect-[3/4] border border-white/10"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent z-10 opacity-80" />
+                    <motion.img 
+                      whileHover={{ scale: 1.1 }}
+                      transition={{ duration: 0.4 }}
+                      src={block.img}
+                      className="absolute inset-0 w-full h-full object-cover transform scale-105"
+                    />
+                    <div className="absolute bottom-6 left-6 z-20">
+                      <h3 className="font-serif italic text-white text-2xl translate-y-4 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                        {block.title}
+                      </h3>
+                      <div className="w-8 h-1 bg-amber-500 mt-2 rounded-full transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-300 delay-100" />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Scroll Section 4 - Abstract Visuals */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full overflow-hidden">
+            <motion.div 
+              initial={{ scale: 1.2, opacity: 0 }}
+              whileInView={{ scale: 1, opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="absolute inset-0 z-0"
+            >
+              <img 
+                src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=2000&auto=format&fit=crop" 
+                className="w-full h-full object-cover opacity-20 sepia-[0.3]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/50 to-[#050505]" />
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="relative z-10 text-center max-w-4xl mx-auto space-y-8"
+            >
+              <h2 className="text-5xl sm:text-7xl font-serif italic text-white leading-tight">
+                Crafted for  <br/> <span className="bg-clip-text text-transparent bg-gradient-to-r from-zinc-300 to-zinc-600">Perfection</span>
+              </h2>
+              <p className="text-xl text-zinc-400 max-w-2xl mx-auto">
+                No cluttered interfaces. No training required. Our platform is organically designed to match the speed of your kitchen and the simplicity of pen and paper, supercharged with AI.
+              </p>
+            </motion.div>
+          </section>
+
+          {/* Scroll Section 5 - Data & Scale */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full bg-[#050505]">
+            <div className="w-full max-w-6xl mx-auto flex flex-col md:flex-row-reverse gap-16 items-center">
+              <motion.div 
+                initial={{ opacity: 0, x: 40 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="flex-1 space-y-6"
+              >
+                <h2 className="text-4xl sm:text-5xl font-serif italic text-white drop-shadow-lg">
+                  Unprecedented <span className="text-indigo-400">Scale.</span>
+                </h2>
+                <p className="text-zinc-400 text-lg leading-relaxed">
+                  Manage 10 to 1,000 locations seamlessly. Our global decentralized infrastructure ensures 99.99% uptime, keeping your transactions flowing even during peak hours.
+                </p>
+                <div className="grid grid-cols-2 gap-6 pt-6">
+                  <div>
+                    <h4 className="text-3xl font-serif text-white italic">0ms</h4>
+                    <p className="text-sm text-zinc-500 font-mono mt-1">Data Latency</p>
+                  </div>
+                  <div>
+                    <h4 className="text-3xl font-serif text-white italic">1M+</h4>
+                    <p className="text-sm text-zinc-500 font-mono mt-1">Daily Orders</p>
+                  </div>
+                </div>
+              </motion.div>
+              
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, rotateY: -20 }}
+                whileInView={{ opacity: 1, scale: 1, rotateY: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className="flex-1 relative rounded-3xl overflow-hidden border border-white/5 shadow-[0_0_80px_-20px_rgba(99,102,241,0.15)] group min-h-[400px] bg-[#0a0a0c] flex items-center justify-center"
+              >
+                <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent z-0" />
+                <div className="relative z-10 w-full p-8 flex flex-col gap-4">
+                  {[40, 70, 45, 90, 60].map((h, i) => (
+                    <div key={i} className="flex items-end gap-4 w-full h-8 group-hover:gap-6 transition-all duration-500">
+                      <div className="text-xs font-mono text-zinc-500 w-8">T-{h}</div>
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${h}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 1, delay: 0.2 + (i * 0.1) }}
+                        className="h-full bg-gradient-to-r from-indigo-500/50 to-indigo-400 rounded-r-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </div>
+          </section>
+
+          {/* Scroll Section 6 - Seamless Integrations */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full border-t border-white/5 bg-black/40 backdrop-blur-md">
+            <div className="w-full max-w-6xl mx-auto flex flex-col items-center">
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={{ duration: 0.8 }}
+                className="text-center mb-16 space-y-4"
+              >
+                <h2 className="text-4xl sm:text-6xl font-serif italic text-white drop-shadow-lg">
+                  Universal <span className="text-sky-400">Connectivity</span>
+                </h2>
+                <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
+                  Plug into delivery networks, accounting software, and inventory suppliers with one click.
+                </p>
+              </motion.div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 w-full max-w-4xl">
+                {[
+                  "Delivery Apps", "Payment Gateways", "Global Suppliers", "Tax Authorities", 
+                  "IoT Devices", "HR Systems", "Marketing CRMs", "Analytics Tools"
+                ].map((item, i) => (
+                  <motion.div
+                    key={item}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true, margin: "-50px" }}
+                    transition={{ duration: 0.5, delay: i * 0.1 }}
+                    whileHover={{ scale: 1.05, backgroundColor: "rgba(255,255,255,0.1)" }}
+                    className="p-6 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-center text-center backdrop-blur-md cursor-pointer transition-colors"
+                  >
+                    <span className="text-zinc-300 font-mono text-xs uppercase tracking-widest">{item}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Scroll Section 7 - CTA */}
+          <section className="saas-section min-h-screen flex items-center justify-center px-4 sm:px-8 py-24 relative w-full overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-t from-amber-500/10 via-black to-black" />
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="relative z-10 text-center max-w-4xl mx-auto space-y-8"
+            >
+              <h2 className="text-6xl sm:text-8xl font-serif italic text-white leading-tight">
+                Ready to <br/> <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-300 to-orange-500">Transform?</span>
+              </h2>
+              
+              <div className="pt-12 flex flex-col sm:flex-row items-center justify-center gap-6">
+                <button onClick={() => setIsSignupModalOpen(true)} className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-black font-bold uppercase tracking-widest text-sm hover:scale-105 transition-transform flex items-center justify-center gap-3 group">
+                  <Sparkles className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform" />
+                  Create New Account
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform opacity-50" />
+                </button>
+              </div>
+            </motion.div>
+          </section>
+
         </main>
+
+        {/* Signup Modal Overlay */}
+        <AnimatePresence>
+          {isSignupModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 20 }}
+                className="relative w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl overflow-hidden"
+              >
+                <div className="absolute top-4 right-4">
+                  <button 
+                    onClick={() => {
+                      setIsSignupModalOpen(false);
+                    }}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-amber-500 mb-2">
+                      <Store className="w-5 h-5" />
+                      <span className="font-mono text-[10px] uppercase tracking-widest">Connect Workspace</span>
+                    </div>
+                    <h3 className="text-3xl font-serif italic text-white">Join the Network</h3>
+                    <p className="text-zinc-400 text-sm leading-relaxed whitespace-pre-wrap">
+                      {signupDetails || "Please complete the registration form to request a new decentralized branch database."}
+                    </p>
+                  </div>
+
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex gap-3 text-amber-200/80">
+                     <Shield className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
+                     <div className="text-xs">
+                       <strong className="block text-amber-500 mb-1">Verification Required</strong>
+                       Every tenant workspace undergoes manual setup and security clearance before gaining network access.
+                     </div>
+                  </div>
+                  
+                  <div className="pt-4 flex flex-col gap-3">
+                    <a 
+                      href={signupLink || "#"} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        if (!signupLink) {
+                          e.preventDefault();
+                          alert("Signup link is not currently configured by the admin.");
+                        }
+                      }}
+                      className={`w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all shadow-lg ${
+                        signupLink 
+                          ? "bg-amber-500 text-black hover:bg-amber-400 active:scale-95 cursor-pointer" 
+                          : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                      }`}
+                    >
+                      Proceed to Form <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Login Modal Overlay */}
+        <AnimatePresence>
+          {isLoginModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl overflow-hidden"
+              >
+                <div className="absolute top-4 right-4 z-10">
+                  <button 
+                    onClick={() => {
+                      setIsLoginModalOpen(false);
+                      setLoginError("");
+                      setLoginSuccess("");
+                    }}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-6 relative z-0">
+                  <div className="space-y-2">
+                    <h3 className="font-serif italic text-3xl text-white">Authorized Access</h3>
+                    {loginError ? (
+                      <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-rose-400 font-bold animate-pulse">
+                        {loginError}
+                      </p>
+                    ) : loginSuccess ? (
+                      <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-emerald-400 font-bold animate-pulse">
+                        {loginSuccess}
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">
+                        Workspace Login
+                      </p>
+                    )}
+                  </div>
+                  
+                  <form onSubmit={handleGatewayLogin} className="space-y-4">
+                    {/* ID IDENTITY INPUT */}
+                    <div className="space-y-1.5 flex flex-col">
+                      <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-400 ml-1">Workspace ID</label>
+                      <div className="relative group/input">
+                        <input
+                          type={showFormUserId ? "text" : "password"}
+                          required
+                          placeholder="Store / Admin ID"
+                          value={formUserId}
+                          onChange={(e) => setFormUserId(e.target.value)}
+                          className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl pl-4 pr-12 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-black/80 transition-all font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowFormUserId(!showFormUserId)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white transition-colors p-1 cursor-pointer"
+                        >
+                          {showFormUserId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* PASSWORD INPUT */}
+                    <div className="space-y-1.5 flex flex-col">
+                      <label className="font-mono text-[9px] uppercase tracking-widest text-zinc-400 ml-1">Secret Key</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={formPassword}
+                        onChange={(e) => setFormPassword(e.target.value)}
+                        className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-black/80 transition-all font-mono"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-white hover:bg-zinc-200 text-black font-sans text-xs font-black uppercase tracking-widest py-3 hover:py-4 rounded-xl transition-all cursor-pointer active:scale-[0.98] mt-4 flex items-center justify-center gap-2 group/btn relative overflow-hidden"
+                    >
+                      <span className="relative z-10 flex items-center gap-2">
+                        Authenticate
+                        <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                      </span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-[200%] group-hover/btn:translate-x-[200%] transition-transform duration-700 ease-in-out" />
+                    </button>
+                  </form>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </div>
     );
   }
@@ -737,7 +1344,7 @@ export default function App() {
   if (isTablePathRestricted) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#050505] px-6 py-12 text-zinc-100 animate-fadeIn relative overflow-hidden" id="restricted-table-access">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-rose-500/10 rounded-full blur-[90px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-rose-500/20 to-transparent rounded-full pointer-events-none" />
         <div className="w-full max-w-md rounded-[28px] border border-rose-950/45 bg-[#0a0a0c]/90 backdrop-blur-md p-8 text-center space-y-6 shadow-2xl relative z-10">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-955/20 border border-rose-900/40 text-rose-500 text-xl font-bold shadow-xl">
             🔒
