@@ -1256,6 +1256,8 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setIsLoginModalOpen(false);
+                      setFormUserId("");
+                      setFormPassword("");
                       setLoginError("");
                       setLoginSuccess("");
                     }}
